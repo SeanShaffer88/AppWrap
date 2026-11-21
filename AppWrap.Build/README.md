@@ -2,6 +2,8 @@
 
 Windows .NET 10 packaging orchestration. Depends on `AppWrap.Core`, `AppWrap.Generators`, and `AppWrap.Imaging`; original AppWrap code uses the repository's MIT license. Compiler distributions are separate, versioned tools with their own licenses and provenance. They are not embedded in this NuGet package.
 
+The original native x86 selected-destination upgrade guard **is** embedded as a build resource. It runs only inside a generated portable installer when its installing user starts installation; importing this library or building a package does not execute the guard. It has a bounded graceful-close contract, no force termination, and no .NET/external CRT dependency. The package includes its exact source, recipe, provenance, MIT license and Microsoft static CRT notice under `native/UpgradeGuard` and `licenses`. Generated packages retain these notices in their own `Other` directory, separate from the unmodified source payload under `App/Payload`.
+
 Public API: `BuildService(baseDirectory, stateDirectory).BuildAsync(input, cancellationToken)`, `BuildResult`, `BuildFailureException`, `ProcessRunner.RunAsync(...)`, and `ProcessResult`. Construction/import has no background or filesystem side effects. An explicit build snapshots the selected source, creates temporary staging beneath the supplied state boundary, invokes the selected trusted backend, and commits output only after success. Cancellation/failure preserves existing output. The caller must supply writable, app-owned state/tool boundaries and clean up retained state after use. Payload applications are never launched by the service.
 
 ```csharp

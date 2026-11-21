@@ -1,0 +1,13 @@
+{
+  "sourceSha256": "7D2C6833B7753347C779D75573EE320BDA1806D62767697D243C8213AD667787",
+  "architecture": "x86",
+  "version": 1,
+  "buildEvidence": "C:/Users/Sean Shaffer/Documents/DevTools/runs/20261121T222723503Z-bea305774f2449f4982a743cd40f3036",
+  "binarySha256": "EA6AADD1B3591E23641B2100DD5EB4F8D291C71A9FA2F16461E7D30FB1A9CEEF",
+  "license": "Original source MIT; Microsoft static CRT subject to Visual Studio redistribution terms",
+  "compilerDevelopmentPath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x86/cl.exe",
+  "sdk": "10.0.26100.0",
+  "flags": "/std:c++20 /W4 /WX /O2 /MT /EHsc /GS /DYNAMICBASE /NXCOMPAT /SUBSYSTEM:WINDOWS",
+  "buildExitCode": 0,
+  "compiler": "MSVC 19.44.35207"
+}

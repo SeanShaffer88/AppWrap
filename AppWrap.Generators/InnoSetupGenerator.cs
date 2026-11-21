@@ -16,6 +16,8 @@ public static class InnoSetupGenerator
         var id = InputRules.SafeId(input.AppName);
         var name = Literal(input.AppName);
         var exe = Literal(input.MainExecutable);
+        var options = StandardInstallerOptions.Normalize(input.StandardOptions);
+        var cwd = Literal(Path.GetDirectoryName(input.MainExecutable) ?? "");
         var script = $$"""
             [Setup]
             AppId=AppWrap-{{id}}
@@ -37,8 +39,12 @@ public static class InnoSetupGenerator
             Source: "{{Literal(payload)}}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
             [Icons]
             """;
-        if (input.CreateStartMenuShortcut) script += $"\nName: \"{{autoprograms}}\\{name}\"; Filename: \"{{app}}\\{exe}\"; WorkingDir: \"{{app}}\\{Literal(Path.GetDirectoryName(input.MainExecutable) ?? "")}\"";
-        if (input.CreateDesktopShortcut) script += $"\nName: \"{{autodesktop}}\\{name}\"; Filename: \"{{app}}\\{exe}\"; WorkingDir: \"{{app}}\\{Literal(Path.GetDirectoryName(input.MainExecutable) ?? "")}\"";
-        return script + $"\n[Run]\nFilename: \"{{app}}\\{exe}\"; Description: \"Open {name}\"; WorkingDir: \"{{app}}\\{Literal(Path.GetDirectoryName(input.MainExecutable) ?? "")}\"; Flags: nowait postinstall skipifsilent\n";
+        script += $"\nName: \"{{autoprograms}}\\{name}\"; Filename: \"{{app}}\\{exe}\"; WorkingDir: \"{{app}}\\{cwd}\"; Tasks: startmenuicon";
+        script += $"\nName: \"{{autodesktop}}\\{name}\"; Filename: \"{{app}}\\{exe}\"; WorkingDir: \"{{app}}\\{cwd}\"; Tasks: desktopicon";
+        script += "\n[Tasks]\nName: startmenuicon; Description: \"Create a Start Menu shortcut (optional)\"; Flags: " + (input.CreateStartMenuShortcut ? "" : "unchecked") + "\n";
+        script += "Name: desktopicon; Description: \"Create a Desktop shortcut (optional)\"; Flags: " + (input.CreateDesktopShortcut ? "" : "unchecked") + "\n[Run]\n";
+        if (options.OfferLaunchAfterInstall) script += $"Filename: \"{{app}}\\{exe}\"; Description: \"Open {name} (optional)\"; WorkingDir: \"{{app}}\\{cwd}\"; Flags: nowait postinstall skipifsilent\n";
+        if (options.OfferDeveloperWebsite) script += $"Filename: \"{Literal(options.DeveloperWebsite!)}\"; Description: \"Visit the developer's website (optional)\"; Flags: postinstall shellexec skipifsilent unchecked\n";
+        return script + StartupCodeGenerator.Generate(input, options);
     }
 }

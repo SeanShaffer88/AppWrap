@@ -1,0 +1,486 @@
+{
+  "schemaVersion": 1,
+  "observedUtc": "2026-11-21T22:27:25.6515332Z",
+  "valid": true,
+  "image": {
+    "Path": "C:\\Users\\Sean Shaffer\\Documents\\Codex\\2026-11-21\\c\\work\\AppWrap\\native\\UpgradeGuard\\AppWrap.UpgradeGuard.exe",
+    "Architecture": "x86",
+    "Format": "PE32",
+    "IsDll": false,
+    "HasClrHeader": false,
+    "Exports": [],
+    "Imports": [
+      {
+        "Library": "USER32.dll",
+        "Symbols": [
+          {
+            "Name": "GetWindowThreadProcessId",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "EnumWindows",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "IsWindow",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "SendMessageTimeoutW",
+            "Ordinal": 0,
+            "Forwarder": null
+          }
+        ]
+      },
+      {
+        "Library": "SHELL32.dll",
+        "Symbols": [
+          {
+            "Name": "CommandLineToArgvW",
+            "Ordinal": 0,
+            "Forwarder": null
+          }
+        ]
+      },
+      {
+        "Library": "KERNEL32.dll",
+        "Symbols": [
+          {
+            "Name": "GetProcAddress",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "WriteConsoleW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "SetFilePointerEx",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetConsoleMode",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetCommandLineW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "CompareFileTime",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "CreateFileW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetFileAttributesW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetFinalPathNameByHandleW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetFullPathNameW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "CloseHandle",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetLastError",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "WaitForSingleObject",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetProcessTimes",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetProcessId",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "OpenProcess",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetTickCount64",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "LocalFree",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "QueryFullProcessImageNameW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "CompareStringOrdinal",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "CreateToolhelp32Snapshot",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "Process32FirstW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "Process32NextW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "IsProcessorFeaturePresent",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "UnhandledExceptionFilter",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "SetUnhandledExceptionFilter",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetCurrentProcess",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "TerminateProcess",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "QueryPerformanceCounter",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetCurrentProcessId",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetCurrentThreadId",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetSystemTimeAsFileTime",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "InitializeSListHead",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "IsDebuggerPresent",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetStartupInfoW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetModuleHandleW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetConsoleOutputCP",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "RaiseException",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "RtlUnwind",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "SetLastError",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "EncodePointer",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "EnterCriticalSection",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "LeaveCriticalSection",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "DeleteCriticalSection",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "InitializeCriticalSectionAndSpinCount",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "TlsAlloc",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "TlsGetValue",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "TlsSetValue",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "TlsFree",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FreeLibrary",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "DecodePointer",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "LoadLibraryExW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetStdHandle",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "WriteFile",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetModuleFileNameW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "ExitProcess",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetModuleHandleExW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "HeapAlloc",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "HeapFree",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FindClose",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FindFirstFileExW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FindNextFileW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "IsValidCodePage",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetACP",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetOEMCP",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetCPInfo",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetCommandLineA",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "MultiByteToWideChar",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "WideCharToMultiByte",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetEnvironmentStringsW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FreeEnvironmentStringsW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "SetStdHandle",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetFileType",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetStringTypeW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FlsAlloc",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FlsGetValue",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FlsSetValue",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FlsFree",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "InitializeCriticalSectionEx",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "VirtualProtect",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "LCMapStringW",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "GetProcessHeap",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "HeapSize",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "HeapReAlloc",
+            "Ordinal": 0,
+            "Forwarder": null
+          },
+          {
+            "Name": "FlushFileBuffers",
+            "Ordinal": 0,
+            "Forwarder": null
+          }
+        ]
+      }
+    ]
+  },
+  "comparison": null,
+  "error": null,
+  "limitations": [
+    "Export identities do not establish ABI compatibility.",
+    "Delay imports, managed APIs, dependency resolution, and signature trust are not checked."
+  ]
+}

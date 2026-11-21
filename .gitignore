@@ -8,3 +8,4 @@ third_party/portableapps/*
 third_party/portableapps-prepfailed*/
 !third_party/**/README.md
 !third_party/**/provenance.json
+native/UpgradeGuard/*.obj

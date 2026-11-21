@@ -31,7 +31,7 @@ try {
     @'
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><NuGetAudit>false</NuGetAudit></PropertyGroup>
-  <ItemGroup><PackageReference Include="AppWrap.Core" Version="0.1.0"/><PackageReference Include="AppWrap.Generators" Version="0.1.0"/><PackageReference Include="AppWrap.Imaging" Version="0.1.0"/><PackageReference Include="AppWrap.Build" Version="0.1.0"/></ItemGroup>
+  <ItemGroup><PackageReference Include="AppWrap.Core" Version="0.2.0-preview"/><PackageReference Include="AppWrap.Generators" Version="0.2.0-preview"/><PackageReference Include="AppWrap.Imaging" Version="0.2.0-preview"/><PackageReference Include="AppWrap.Build" Version="0.2.0-preview"/></ItemGroup>
 </Project>
 '@ | Set-Content -LiteralPath (Join-Path $ConsumerDirectory 'Consumer.csproj')
     @'
@@ -54,11 +54,16 @@ internal static class Program
         var input = new AppWrapInput(source, "Packed Consumer", "1.2", "Sample.exe", true, false, output);
         InputRules.Validate(input);
         Check(InputRules.PackageVersion("1.2") == "1.2.0.0", "packed Core version contract");
+        Check(StandardInstallerOptions.Normalize(input.StandardOptions) == new StandardInstallerOptions(), "packed additive standard options defaults");
+        var options = new StandardInstallerOptions(false, true, true, "http://127.0.0.1:18765/packed");
+        Check(StandardInstallerOptions.Normalize(options).DeveloperWebsite == "http://127.0.0.1:18765/packed", "packed pure website validation");
         Check(InputRules.Executables(source).Single() == "Sample.exe", "packed Core discovery");
         Check(PackageNaming.GetFileName("Packed Consumer", "1.2", OutputMode.Standard) == "Packed Consumer-1.2-Setup.exe", "packed canonical standard filename");
         Check(PackageNaming.GetFileName("Packed Consumer", "1.2", OutputMode.PortableApps, PackageNamingStyle.NameSetupVersion) == "Packed Consumer-Portable-1.2.paf.exe", "packed canonical portable filename");
         var script = InnoSetupGenerator.Generate(input, source, root);
         Check(script.Contains("PrivilegesRequired=lowest") && script.Contains("Sample.exe"), "packed standard generator");
+        var optionalScript = InnoSetupGenerator.Generate(input with { StandardOptions = options }, source, root);
+        Check(optionalScript.Contains("StartupOffered = True") && optionalScript.Contains("skipifsilent unchecked") && !optionalScript.Contains("Flags: nowait postinstall"), "packed standard finish choices");
         var metadata = PortableAppsGenerator.Generate(input);
         Check(metadata.Contains("PackageVersion=1.2.0.0") && metadata.Contains("[Control]"), "packed portable generator");
         var icons = Path.Combine(root, "icons"); ImageAssets.WriteIcons(null, icons);

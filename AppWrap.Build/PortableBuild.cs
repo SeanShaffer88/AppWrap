@@ -20,11 +20,23 @@ internal static class PortableBuild
         var infoPath = Path.Combine(metadataDir, "appinfo.ini");
         await File.WriteAllTextAsync(infoPath, PortableAppsGenerator.Generate(input, existing), new UTF8Encoding(true), token).ConfigureAwait(false);
         // Never execute source-provided download actions, installer settings, or custom hooks.
-        await File.WriteAllTextAsync(Path.Combine(metadataDir, "installer.ini"), "[Source]\r\nIncludeInstallerSource=false\r\n[MainDirectories]\r\nRemoveAppDirectory=false\r\nRemoveOtherDirectory=false\r\nRemoveDataDirectory=false\r\n", new UTF8Encoding(true), token).ConfigureAwait(false);
         ImageAssets.WriteIcons(input.LauncherIconPath, metadataDir);
         if (!File.Exists(Path.Combine(package, "help.html")))
             await File.WriteAllTextAsync(Path.Combine(package, "help.html"), "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Application help</title><h1>Application help</h1><p>Open the application's selected launch file. This package does not change where the application stores its settings.</p></html>", token).ConfigureAwait(false);
         Directory.CreateDirectory(Path.Combine(package, "Other", "Source"));
+        foreach (var notice in new[] { (Resource: "AppWrap.LICENSE", Name: "AppWrap-LICENSE.txt"), (Resource: "AppWrap.NativeNotices", Name: "AppWrap-NATIVE-NOTICES.txt") })
+        {
+            using var resource = typeof(PortableBuild).Assembly.GetManifestResourceStream(notice.Resource) ?? throw new BuildFailureException("A packaging component is missing.", "Missing embedded notice: " + notice.Resource);
+            using var noticeFile = new FileStream(Path.Combine(package, "Other", notice.Name), FileMode.CreateNew, FileAccess.Write);
+            await resource.CopyToAsync(noticeFile, token).ConfigureAwait(false);
+        }
+        var guardPath = Path.Combine(stage, "AppWrap.UpgradeGuard.exe");
+        using (var resource = typeof(PortableBuild).Assembly.GetManifestResourceStream("AppWrap.UpgradeGuard.exe") ?? throw new BuildFailureException("A packaging component is missing.", "Missing embedded upgrade guard."))
+        using (var guardFile = File.Create(guardPath))
+            await resource.CopyToAsync(guardFile, token).ConfigureAwait(false);
+        // These settings are coupled to the trusted embedded guard. No caller-supplied hook is accepted.
+        await File.WriteAllTextAsync(Path.Combine(package, "Other", "Source", "PortableApps.comInstallerCustom.nsh"), UpgradeGuardGenerator.Generate(input, guardPath), new UTF8Encoding(true), token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(metadataDir, "installer.ini"), UpgradeGuardGenerator.InstallerSettings, new UTF8Encoding(true), token).ConfigureAwait(false);
         var backend = Path.Combine(stage, "builder");
         var installedBackend = Path.Combine(baseDirectory, "third_party", "portableapps");
         if (!File.Exists(Path.Combine(installedBackend, "AppWrapPackagingBuilder.exe"))) throw new BuildFailureException("A packaging component is missing. Download a complete copy of AppWrap and try again.", "Missing portable packaging backend.");

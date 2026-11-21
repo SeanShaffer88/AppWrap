@@ -13,8 +13,8 @@ internal static class BatchChecks
         string? sevenZip, Action<string, bool> check)
     {
         var batchRoot = Path.Combine(evidence, "batch"); Directory.CreateDirectory(batchRoot);
-        var standard = input with { Mode = OutputMode.Standard, OutputPath = Path.Combine(batchRoot, "paired-Setup.exe") };
-        var portable = input with { Mode = OutputMode.PortableApps, OutputPath = Path.Combine(batchRoot, "paired-Portable.paf.exe") };
+        var standard = input with { Mode = OutputMode.Standard, OutputPath = Path.Combine(batchRoot, "paired-Setup.exe"), StandardOptions = new(false, true, true, "http://127.0.0.1:18765/both-only") };
+        var portable = input with { Mode = OutputMode.PortableApps, OutputPath = Path.Combine(batchRoot, "paired-Portable.paf.exe"), StandardOptions = new(OfferDeveloperWebsite: true, DeveloperWebsite: "ignored invalid portable option") };
         var suppliedIcon = Path.Combine(batchRoot, "selected-icon.png");
         var suppliedSidebar = Path.Combine(batchRoot, "selected-sidebar.bmp");
         File.Copy(Path.Combine(evidence, "images", "appicon_128.png"), suppliedIcon);
@@ -43,6 +43,8 @@ internal static class BatchChecks
                     var stagedMarker = Path.Combine(stage, "payload", "batch-marker.txt");
                     check("batch standard prepared from captured bytes", File.ReadAllText(stagedMarker) == capturedMarker);
                     check("batch standard script uses owned snapshot", File.ReadAllText(Path.Combine(stage, "package.iss")).Contains(Path.Combine(stage, "payload"), StringComparison.Ordinal));
+                    var generated = File.ReadAllText(Path.Combine(stage, "package.iss"));
+                    check("batch preserves standard-only finish options independently of portable options", generated.Contains("StartupOffered = True", StringComparison.Ordinal) && generated.Contains("127.0.0.1:18765/both-only", StringComparison.Ordinal) && !generated.Contains("Flags: nowait postinstall", StringComparison.Ordinal));
                 }
             }));
             check("batch actual standard artifact", result.Standard.OutputPath == standard.OutputPath && result.Standard.Bytes > 10000 && File.Exists(standard.OutputPath));
@@ -59,6 +61,8 @@ internal static class BatchChecks
                 check("batch portable uses same captured original bytes", File.ReadAllText(Path.Combine(extracted, "App", "Payload", "batch-marker.txt")) == capturedMarker);
                 check("batch portable selected executable retained", File.Exists(Path.Combine(extracted, "App", "Payload", input.MainExecutable)));
                 check("batch portable root launcher retained", File.Exists(Path.Combine(extracted, PortableAppsGenerator.PackageId(input) + ".exe")));
+                var portableMetadata = File.ReadAllText(Path.Combine(extracted, "App", "AppInfo", "appinfo.ini"));
+                check("batch portable metadata excludes standard browser startup settings", !portableMetadata.Contains("both-only", StringComparison.Ordinal) && !portableMetadata.Contains("StartWithWindows", StringComparison.Ordinal));
             }
             File.WriteAllText(Path.Combine(batchRoot, "artifacts.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         }

@@ -13,4 +13,11 @@ InputRules.Validate(input);
 var fourPartVersion = InputRules.PackageVersion(input.AppVersion); // 1.2.0.0
 ```
 
+The final optional positional argument `StandardOptions` accepts `StandardInstallerOptions(OfferLaunchAfterInstall = true, OfferStartWithWindows = false, OfferDeveloperWebsite = false, DeveloperWebsite = null)`. Existing calls retain these defaults. `StandardInstallerOptions.Normalize(null)` returns those defaults; when the website offer is enabled it returns a normalized absolute HTTP/HTTPS URL or throws `UserInputException`. `ValidateWebsite` rejects credentials, raw quotes/backticks, control characters, whitespace, backslashes, relative/custom schemes and values over 2048 characters. These two methods perform no filesystem or network I/O. Portable inputs ignore this standard-only option, including when paired with a standard input carrying different options.
+
+```csharp
+var standard = input with { StandardOptions = new(false, true, true, "https://example.org/app") };
+InputRules.Validate(standard);
+```
+
 Use `tools/Test-PackedModules.ps1` from the repository for an independent consumer restored from the actual local NuGet artifacts. The application regression harness covers additional malicious paths and input cases. These are local APIs for trusted host applications; validation cannot eliminate all filesystem change races.
