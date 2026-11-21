@@ -10,7 +10,7 @@ internal static class PortableBuild
         var sourceHooks = Path.Combine(payload, "Other", "Source");
         if (Directory.Exists(sourceHooks) && Directory.EnumerateFiles(sourceHooks, "*", SearchOption.AllDirectories).Any(p => Path.GetExtension(p).Equals(".nsh", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(p).Equals(".nsi", StringComparison.OrdinalIgnoreCase)))
             throw new UserInputException("This app contains custom packaging instructions. Choose its application folder without those instructions.");
-        var package = Path.Combine(stage, PortableAppsGenerator.PackageId(input));
+        var package = Path.Combine(stage, "portable");
         Directory.CreateDirectory(Path.Combine(package, "App"));
         var previousInfo = Path.Combine(payload, "App", "AppInfo", "appinfo.ini");
         if (File.Exists(previousInfo) && new FileInfo(previousInfo).Length > 65536) throw new UserInputException("The app's existing package details are too large.");
@@ -36,8 +36,7 @@ internal static class PortableBuild
         if (input.SidebarImagePath != null) ImageAssets.WriteSidebar(input.SidebarImagePath, Path.Combine(backend, "App", "installer", "PortableApps.comInstaller.bmp"));
         var result = await ProcessRunner.RunAsync(Path.Combine(backend, "AppWrapPackagingBuilder.exe"), [package], backend, token).ConfigureAwait(false);
         var logPath = Path.Combine(backend, "Data", "PortableApps.comInstallerLog.txt");
-        var log = "";
-        if (File.Exists(logPath)) { using var logReader = new StreamReader(logPath, Encoding.Unicode, true); var buffer = new char[131072]; var read = await logReader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false); log = new string(buffer, 0, read) + (read < buffer.Length ? "" : "\n[log truncated]"); }
+        var log = await BackendLog.ReadAsync(logPath, token).ConfigureAwait(false);
         var artifacts = Directory.GetFiles(stage, "*.paf.exe", SearchOption.TopDirectoryOnly);
         if (result.ExitCode != 0 || artifacts.Length != 1) throw new BuildFailureException("AppWrap couldn’t build the portable package. Check the app folder and try again.", $"Builder exit code: {result.ExitCode}\n{result.Log}\n{log}");
         return artifacts[0];

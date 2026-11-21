@@ -35,6 +35,7 @@ internal static class Program
         var input = new AppWrapInput(source, "AppWrap Test", "1.2", "bin\\Demo.exe", true, false, Path.Combine(evidence, "standard.exe"));
         InputRules.Validate(input);
         NamingChecks.Run(Check, Reject);
+        await BackendLogChecks.Run(evidence, Check);
         Check("nested executable discovery", InputRules.Executables(source).SequenceEqual(["bin\\Demo.exe"]));
         Check("four-part numeric version", InputRules.PackageVersion("01.2") == "1.2.0.0");
         foreach (var bad in new[] { "", "1.2.3.4.5", "1.x", "1..2", "65536", "-1" }) Reject("invalid version " + bad, () => InputRules.PackageVersion(bad));
@@ -115,6 +116,7 @@ internal static class Program
         Check("source unchanged", Directory.GetFiles(source, "*", SearchOption.AllDirectories).Length == 5 && File.ReadAllText(Path.Combine(source, "readme.txt")).StartsWith("Owned compile-only", StringComparison.Ordinal));
         Check("successful staging cleanup", Directory.GetDirectories(Path.Combine(evidence, "state", "Builds")).Length == 0);
         await BatchChecks.Run(root, evidence, input, service, args.Length > 1 ? args[1] : null, Check);
+        await LongStageChecks.Run(root, evidence, input, Check);
         File.WriteAllText(Path.Combine(evidence, "results.json"), JsonSerializer.Serialize(new { passed = Passed.Count, checks = Passed, evidence, installersExecuted = false }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"RESULT: {Passed.Count} checks passed. Evidence: {evidence}");
     }
