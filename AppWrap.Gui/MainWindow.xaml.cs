@@ -24,7 +24,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? cancellation;
     private string StateDirectory => Path.Combine(AppContext.BaseDirectory, "Data");
     private OutputMode Mode => PortableMode.IsChecked == true ? OutputMode.PortableApps : OutputMode.Standard;
-    private int TotalSteps => Mode == OutputMode.Standard ? 5 : 7;
+    private int TotalSteps => UsesPortable ? 7 : 5;
 
     public MainWindow()
     {
@@ -41,11 +41,11 @@ public partial class MainWindow : Window
     private void ModeChanged(object sender, RoutedEventArgs e)
     {
         if (Page == null) return;
-        step = 0; output = ""; Render();
+        step = 0; InvalidateOutputName(); Render();
     }
 
     private static T Identify<T>(T control, string id) where T : DependencyObject
-    { AutomationProperties.SetAutomationId(control, id); AutomationProperties.SetName(control, id switch { "SourceFolder" => "Application folder", "AppName" => "App name", "AppVersion" => "Version", "MainExecutable" => "Application launch file", "OutputPath" => "Finished package", "BrowseSourceFolder" => "Choose application folder", "BrowseOutputPath" => "Choose save location", "StartMenuShortcut" => "Start Menu shortcut", "DesktopShortcut" => "Desktop shortcut", "LauncherIcon" => "App icon", "BrowseLauncherIcon" => "Choose app icon", "SidebarImage" => "Sidebar image", "BrowseSidebarImage" => "Choose sidebar image", _ => id }); return control; }
+    { AutomationProperties.SetAutomationId(control, id); AutomationProperties.SetName(control, id switch { "SourceFolder" => "Application folder", "AppName" => "App name", "AppVersion" => "Version", "MainExecutable" => "Application launch file", "OutputPath" => "Finished package", "BrowseSourceFolder" => "Choose application folder", "BrowseOutputPath" => "Choose save location", "StartMenuShortcut" => "Start Menu shortcut", "DesktopShortcut" => "Desktop shortcut", "LauncherIcon" => "App icon", "BrowseLauncherIcon" => "Choose app icon", "SidebarImage" => "Sidebar image", "BrowseSidebarImage" => "Choose sidebar image", "NamingStyle" => "Filename style", "OutputFolder" => "Output folder", "BrowseOutputFolder" => "Choose output folder", _ => id }); return control; }
 
     private StackPanel Panel() { var panel = new StackPanel(); Page.Content = panel; return panel; }
     private TextBlock Label(string text) { var label = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 8) }; label.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); return label; }
@@ -84,19 +84,19 @@ public partial class MainWindow : Window
         Formats.IsEnabled = !busy && !finished; Formats.Visibility = step == 0 && !busy && !finished ? Visibility.Visible : Visibility.Collapsed;
         BackButton.Visibility = step > 0 && !busy && !finished ? Visibility.Visible : Visibility.Collapsed;
         NextButton.Visibility = busy || finished ? Visibility.Collapsed : Visibility.Visible;
-        NextButton.Content = step == TotalSteps - 1 ? "Build" : "Next";
+        NextButton.Content = step == TotalSteps - 1 ? IsBoth ? "Build both" : "Build" : "Next";
         CancelButton.Content = finished ? "Close" : busy ? "Cancel build" : "Cancel";
         StepLabel.Text = finished ? "READY TO SHARE" : busy ? "BUILDING YOUR PACKAGE" : $"STEP {step + 1} OF {TotalSteps}";
-        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", 3 => "Shortcuts", 4 when Mode == OutputMode.PortableApps => "App icon", 5 when Mode == OutputMode.PortableApps => "Sidebar image", _ => "Save & build" };
+        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", 3 => "Shortcuts", 4 when UsesPortable => "App icon", 5 when UsesPortable => "Sidebar image", _ => "Save & build" };
         Steps.Maximum = TotalSteps; Steps.Value = step + 1; Steps.IsIndeterminate = busy;
         var panel = Panel();
-        if (finished) { Question.Text = "Your package is ready."; Hint.Text = "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
+        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
         switch (step)
         {
             case 0:
                 Question.Text = "Where is your application?";
-                Hint.Text = Mode == OutputMode.Standard ? "Choose the folder that contains your app and the files it needs." : "Choose an app that is already portable. Packaging cannot move its settings or remove its dependencies.";
+                Hint.Text = !UsesPortable ? "Choose the folder that contains your app and the files it needs." : "Choose an app that is already portable. Packaging cannot move its settings or remove its dependencies.";
                 SelectFile(panel, "Application folder", "SourceFolder", source, BrowseSource);
                 break;
             case 1:
@@ -104,9 +104,9 @@ public partial class MainWindow : Window
                 var information = new Grid(); information.ColumnDefinitions.Add(new() { Width = new GridLength(2, GridUnitType.Star) }); information.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
                 var namePanel = new StackPanel { Margin = new(0, 0, 16, 0) }; var versionPanel = new StackPanel(); Grid.SetColumn(versionPanel, 1);
                 namePanel.Children.Add(Label("App name"));
-                var appName = Identify(new TextBox { Text = name, MaxLength = 120 }, "AppName"); appName.TextChanged += (_, _) => name = appName.Text; namePanel.Children.Add(appName);
+                var appName = Identify(new TextBox { Text = name, MaxLength = 120 }, "AppName"); appName.TextChanged += (_, _) => { name = appName.Text; InvalidateOutputName(); }; namePanel.Children.Add(appName);
                 versionPanel.Children.Add(Label("Version"));
-                var appVersion = Identify(new TextBox { Text = version, MaxLength = 23 }, "AppVersion"); appVersion.TextChanged += (_, _) => version = appVersion.Text; versionPanel.Children.Add(appVersion);
+                var appVersion = Identify(new TextBox { Text = version, MaxLength = 23 }, "AppVersion"); appVersion.TextChanged += (_, _) => { version = appVersion.Text; InvalidateOutputName(); }; versionPanel.Children.Add(appVersion);
                 information.Children.Add(namePanel); information.Children.Add(versionPanel); panel.Children.Add(information);
                 break;
             case 2:
@@ -121,20 +121,17 @@ public partial class MainWindow : Window
                 catch (Exception ex) { ShowError(ex); }
                 break;
             case 3:
-                Question.Text = "Where should shortcuts go?"; Hint.Text = Mode == OutputMode.Standard ? "Make your app easy to find after installation." : "Your package will appear in the portable app menu. Windows shortcuts are available for standard installers.";
+                Question.Text = "Where should shortcuts go?"; Hint.Text = IsBoth ? "These shortcuts apply to the installer. The portable package uses its menu entry." : Mode == OutputMode.Standard ? "Make your app easy to find after installation." : "Your package will appear in the portable app menu. Windows shortcuts are available for standard installers.";
                 var menu = Identify(new CheckBox { Content = "Start Menu", IsChecked = startMenu, IsEnabled = Mode == OutputMode.Standard }, "StartMenuShortcut"); menu.Checked += (_, _) => startMenu = true; menu.Unchecked += (_, _) => startMenu = false; panel.Children.Add(menu);
                 var desk = Identify(new CheckBox { Content = "Desktop", IsChecked = desktop, IsEnabled = Mode == OutputMode.Standard }, "DesktopShortcut"); desk.Checked += (_, _) => desktop = true; desk.Unchecked += (_, _) => desktop = false; panel.Children.Add(desk);
                 break;
-            case 4 when Mode == OutputMode.PortableApps:
+            case 4 when UsesPortable:
                 Question.Text = "Choose an icon for your app."; Hint.Text = "Pick a picture, or click Next to use a simple default icon.";
                 SelectFile(panel, "App icon (optional)", "LauncherIcon", icon, () => BrowseImage(true), true); break;
-            case 5 when Mode == OutputMode.PortableApps:
+            case 5 when UsesPortable:
                 Question.Text = "Choose a sidebar image."; Hint.Text = "This picture appears beside the installation steps. Click Next to keep the default.";
                 SelectFile(panel, "Sidebar image (optional)", "SidebarImage", sidebar, () => BrowseImage(false), true); break;
-            default:
-                Question.Text = Mode == OutputMode.Standard ? "Where should the installer be saved?" : "Where should the portable package be saved?";
-                Hint.Text = "Choose a location, then click Build. That’s all.";
-                SelectFile(panel, "Finished package", "OutputPath", output, BrowseOutput); break;
+            default: RenderOutput(panel); break;
         }
     }
 
@@ -143,7 +140,7 @@ public partial class MainWindow : Window
         if (scanning || busy) return;
         var dialog = new OpenFolderDialog { Title = "Choose your application folder", Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
-        source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); output = ""; executable = "";
+        source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); InvalidateOutputName(); executable = "";
         try { Scanning(true); executables = await Task.Run(() => InputRules.Executables(source)); if (executables.Count == 1) executable = executables[0]; Render(); }
         catch (Exception ex) { Render(); ShowError(ex); }
         finally { Scanning(false); }
@@ -159,32 +156,26 @@ public partial class MainWindow : Window
 
     private void BrowseOutput()
     {
-        var safeName = new string(name.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray());
-        var dialog = new SaveFileDialog { Title = "Save your package", Filter = "Windows package|*.exe", DefaultExt = ".exe", AddExtension = true, OverwritePrompt = true,
-            FileName = Mode == OutputMode.Standard ? safeName + "_Setup.exe" : safeName + "Portable.paf.exe", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) };
-        if (dialog.ShowDialog(this) == true) { output = dialog.FileName; Render(); }
+        if (IsBoth)
+        {
+            var folder = new OpenFolderDialog { Title = "Choose a folder for both packages", InitialDirectory = outputFolder };
+            if (folder.ShowDialog(this) == true) { outputFolder = folder.FolderName; output = ""; destinationChosen = true; Render(); }
+            return;
+        }
+        var dialog = new SaveFileDialog { Title = "Save your package", Filter = "Windows package|*.exe", DefaultExt = ".exe", AddExtension = true, OverwritePrompt = false,
+            FileName = GeneratedName(Mode), InitialDirectory = outputFolder };
+        if (dialog.ShowDialog(this) == true) { output = dialog.FileName; outputFolder = Path.GetDirectoryName(output)!; destinationChosen = true; Render(); }
     }
-
     private async void NextClick(object sender, RoutedEventArgs e)
     {
         if (scanning || busy || finished) return;
         try
         {
             if (step == 0) { Scanning(true); try { executables = await Task.Run(() => InputRules.Executables(source)); if (executables.Count == 0) throw new UserInputException("We couldn’t find an application file. Pick the folder containing your app’s .exe."); } finally { Scanning(false); } }
-            if (step == 1) { InputRules.Text(name, "name"); InputRules.PackageVersion(version); }
+            if (step == 1) { PackageNaming.ValidateName(name.Trim()); InputRules.PackageVersion(version); }
             if (step == 2 && string.IsNullOrEmpty(executable)) throw new UserInputException("Choose the file that opens your app.");
             if (step < TotalSteps - 1) { step++; Render(); return; }
-            var input = new AppWrapInput(source, name.Trim(), version.Trim(), executable, startMenu, desktop, output, Mode, icon, sidebar);
-            InputRules.Validate(input);
-            busy = true; cancellation = new(); Render();
-            try
-            {
-                var service = new BuildService(AppContext.BaseDirectory, StateDirectory);
-                var result = await service.BuildAsync(input, cancellation.Token);
-                cleanupWarning = result.CleanupWarning;
-                finished = true;
-            }
-            finally { busy = false; cancellation.Dispose(); cancellation = null; }
+            if (!await BuildSelectionAsync()) return;
             Render(); if (closingAfterCancel) Close();
         }
         catch (OperationCanceledException) { Render(); Error.Text = "Build cancelled. Your original files and any existing package are unchanged."; if (closingAfterCancel) Close(); }
@@ -202,7 +193,7 @@ public partial class MainWindow : Window
 
     private void ThemeChanged(object sender, SelectionChangedEventArgs e)
     { if (ThemePicker.SelectedItem is string selected) { theme = selected; ThemeCatalog.Apply(theme, Application.Current.Resources); } }
-    private sealed record SavedWindow(double Left, double Top, double Width, double Height, bool Maximized, string Theme = "AppWrap");
+    private sealed record SavedWindow(double Left, double Top, double Width, double Height, bool Maximized, string Theme = "AppWrap", PackageNamingStyle NamingStyle = PackageNamingStyle.NameVersionSetup);
     private void RestoreWindow()
     {
         try
@@ -213,6 +204,7 @@ public partial class MainWindow : Window
             var saved = JsonSerializer.Deserialize<SavedWindow>(File.ReadAllText(statePath));
             if (saved == null) return;
             theme = ThemeCatalog.Names.Contains(saved.Theme) ? saved.Theme : "AppWrap";
+            namingStyle = Enum.IsDefined(saved.NamingStyle) ? saved.NamingStyle : PackageNamingStyle.NameVersionSetup;
             var restored = WindowPlacement.Clamp(new Rect(saved.Left, saved.Top, saved.Width, saved.Height), MinWidth, MinHeight);
             MinWidth = Math.Min(MinWidth, restored.Width); MinHeight = Math.Min(MinHeight, restored.Height);
             Width = restored.Width; Height = restored.Height; Left = restored.Left; Top = restored.Top;
@@ -229,7 +221,7 @@ public partial class MainWindow : Window
             InputRules.SafePath(Path.Combine(StateDirectory, "window.json"));
             Directory.CreateDirectory(StateDirectory);
             var bounds = RestoreBounds;
-            var saved = new SavedWindow(bounds.Left, bounds.Top, bounds.Width, bounds.Height, WindowState == System.Windows.WindowState.Maximized, theme);
+            var saved = new SavedWindow(bounds.Left, bounds.Top, bounds.Width, bounds.Height, WindowState == System.Windows.WindowState.Maximized, theme, namingStyle);
             var temporary = Path.Combine(StateDirectory, "window-" + Guid.NewGuid().ToString("N") + ".tmp");
             File.WriteAllText(temporary, JsonSerializer.Serialize(saved));
             File.Move(temporary, Path.Combine(StateDirectory, "window.json"), overwrite: true);
