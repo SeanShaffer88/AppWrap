@@ -10,18 +10,17 @@ public sealed class BuildFailureException(string message, string details) : Exce
 
 public sealed record BuildResult(string OutputPath, string Sha256, long Bytes, string? CleanupWarning = null);
 
-public sealed class BuildService(string baseDirectory, string stateDirectory)
+public sealed partial class BuildService(string baseDirectory, string stateDirectory)
 {
-    public async Task<BuildResult> BuildAsync(AppWrapInput input, CancellationToken cancellationToken)
+    public Task<BuildResult> BuildAsync(AppWrapInput input, CancellationToken cancellationToken) => BuildAsync(input, cancellationToken, null);
+
+    public async Task<BuildResult> BuildAsync(AppWrapInput input, CancellationToken cancellationToken, OutputIdentity? expectedOutput)
     {
-        InputRules.Validate(input);
-        var sourcePath = Path.GetFullPath(input.SourceFolder);
-        foreach (var boundary in new[] { baseDirectory, stateDirectory })
+        ValidateInput(input);
+        if (expectedOutput != null)
         {
-            var owned = Path.GetFullPath(boundary);
-            if (InputRules.IsWithin(owned, sourcePath) || InputRules.IsWithin(sourcePath, owned) || string.Equals(owned, sourcePath, StringComparison.OrdinalIgnoreCase))
-                throw new UserInputException("Choose an application folder outside AppWrap's own folder.");
-            if (InputRules.IsWithin(input.OutputPath, owned)) throw new UserInputException("Save the package outside AppWrap's own folder.");
+            if (!string.Equals(Path.GetFullPath(expectedOutput.Path), Path.GetFullPath(input.OutputPath), StringComparison.OrdinalIgnoreCase)) throw new UserInputException("The selected destination changed. Choose the save location again.");
+            expectedOutput.Verify();
         }
         var workRoot = Path.Combine(stateDirectory, "Builds");
         InputRules.SafePath(workRoot);
@@ -36,22 +35,8 @@ public sealed class BuildService(string baseDirectory, string stateDirectory)
         {
             var payload = Path.Combine(stage, "payload");
             await Task.Run(() => Snapshot(input.SourceFolder, payload, cancellationToken), cancellationToken).ConfigureAwait(false);
-            var output = Path.Combine(stage, "output");
-            Directory.CreateDirectory(output);
-            string compiled;
-            if (input.Mode == OutputMode.Standard)
-            {
-                var compiler = Path.Combine(baseDirectory, "third_party", "innosetup", "ISCC.exe");
-                if (!File.Exists(compiler)) throw new BuildFailureException("A packaging component is missing. Download a complete copy of AppWrap and try again.", "Missing bundled compiler: " + compiler);
-                var script = Path.Combine(stage, "package.iss");
-                await File.WriteAllTextAsync(script, InnoSetupGenerator.Generate(input, payload, output), new System.Text.UTF8Encoding(true), cancellationToken).ConfigureAwait(false);
-                var result = await ProcessRunner.RunAsync(compiler, ["--quiet", "--no-ide-signtools", "--no-signing", script], stage, cancellationToken).ConfigureAwait(false);
-                if (result.ExitCode != 0) throw new BuildFailureException("AppWrap couldn’t build the installer. Try closing running copies of the app, check the app folder, and build again.", $"Compiler exit code: {result.ExitCode}\n{result.Log}");
-                compiled = Path.Combine(output, "package.exe");
-            }
-            else compiled = await PortableBuild.BuildAsync(input, payload, stage, baseDirectory, cancellationToken).ConfigureAwait(false);
+            var compiled = await PrepareAsync(input, payload, stage, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!File.Exists(compiled) || new FileInfo(compiled).Length < 2) throw new BuildFailureException("The packaging engine did not produce a package. Try again.", "Expected output missing: " + compiled);
             InputRules.SafePath(input.OutputPath);
             pending = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(input.OutputPath))!, ".appwrap-" + Guid.NewGuid().ToString("N") + ".tmp");
             await using (var source = File.OpenRead(compiled))
@@ -63,6 +48,7 @@ public sealed class BuildService(string baseDirectory, string stateDirectory)
                 hash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(hashStream, cancellationToken).ConfigureAwait(false));
             var bytes = new FileInfo(pending).Length;
             InputRules.SafePath(input.OutputPath);
+            expectedOutput?.Verify();
             File.Move(pending, input.OutputPath, overwrite: true);
             pending = null;
             completed = new(input.OutputPath, hash, bytes);
@@ -79,6 +65,42 @@ public sealed class BuildService(string baseDirectory, string stateDirectory)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
         }
         return completed! with { CleanupWarning = retained.Count == 0 ? null : "Your package is ready, but temporary source copies remain at:\n" + string.Join('\n', retained) };
+    }
+
+    private void ValidateInput(AppWrapInput input)
+    {
+        InputRules.Validate(input);
+        if (input.Mode is not (OutputMode.Standard or OutputMode.PortableApps)) throw new UserInputException("Choose a supported output format.");
+        if (Directory.Exists(input.OutputPath)) throw new UserInputException("Choose a file name, rather than a folder, for the package.");
+        var sourcePath = Path.GetFullPath(input.SourceFolder);
+        foreach (var boundary in new[] { baseDirectory, stateDirectory })
+        {
+            var owned = Path.GetFullPath(boundary);
+            if (InputRules.IsWithin(owned, sourcePath) || InputRules.IsWithin(sourcePath, owned) || string.Equals(owned, sourcePath, StringComparison.OrdinalIgnoreCase))
+                throw new UserInputException("Choose an application folder outside AppWrap's own folder.");
+            if (InputRules.IsWithin(input.OutputPath, owned)) throw new UserInputException("Save the package outside AppWrap's own folder.");
+        }
+    }
+
+    private async Task<string> PrepareAsync(AppWrapInput input, string payload, string stage, CancellationToken cancellationToken)
+    {
+            var output = Path.Combine(stage, "output");
+            Directory.CreateDirectory(output);
+            string compiled;
+            if (input.Mode == OutputMode.Standard)
+            {
+                var compiler = Path.Combine(baseDirectory, "third_party", "innosetup", "ISCC.exe");
+                if (!File.Exists(compiler)) throw new BuildFailureException("A packaging component is missing. Download a complete copy of AppWrap and try again.", "Missing bundled compiler: " + compiler);
+                var script = Path.Combine(stage, "package.iss");
+                await File.WriteAllTextAsync(script, InnoSetupGenerator.Generate(input, payload, output), new System.Text.UTF8Encoding(true), cancellationToken).ConfigureAwait(false);
+                var result = await ProcessRunner.RunAsync(compiler, ["--quiet", "--no-ide-signtools", "--no-signing", script], stage, cancellationToken).ConfigureAwait(false);
+                if (result.ExitCode != 0) throw new BuildFailureException("AppWrap couldn’t build the installer. Try closing running copies of the app, check the app folder, and build again.", $"Compiler exit code: {result.ExitCode}\n{result.Log}");
+                compiled = Path.Combine(output, "package.exe");
+            }
+            else compiled = await PortableBuild.BuildAsync(input, payload, stage, baseDirectory, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(compiled) || new FileInfo(compiled).Length < 2) throw new BuildFailureException("The packaging engine did not produce a package. Try again.", "Expected output missing: " + compiled);
+            return compiled;
     }
 
     private static void Snapshot(string source, string destination, CancellationToken token)

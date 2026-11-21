@@ -72,12 +72,7 @@ public static class InputRules
 
     public static void Validate(AppWrapInput input)
     {
-        Text(input.AppName, "name"); PackageVersion(input.AppVersion);
-        if (input.AppName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || input.AppName.TrimEnd(' ', '.').Length == 0)
-            throw new UserInputException("Use an app name without slash, colon, quote, or other file-name symbols.");
-        var basename = input.AppName.TrimEnd(' ', '.').Split('.')[0].ToUpperInvariant();
-        if (new[] { "CON", "PRN", "AUX", "NUL" }.Contains(basename) || (basename.Length == 4 && (basename.StartsWith("COM", StringComparison.Ordinal) || basename.StartsWith("LPT", StringComparison.Ordinal)) && basename[3] is >= '1' and <= '9'))
-            throw new UserInputException("Choose a different app name. Windows reserves this name for a device.");
+        PackageNaming.ValidateName(input.AppName); PackageVersion(input.AppVersion);
         SafePath(input.SourceFolder); SafePath(input.OutputPath);
         if (!Directory.Exists(input.SourceFolder)) throw new UserInputException("Choose an application folder that still exists.");
         if (Path.IsPathRooted(input.MainExecutable) || !IsWithin(Path.Combine(input.SourceFolder, input.MainExecutable), input.SourceFolder) ||
