@@ -22,12 +22,12 @@ public partial class MainWindow
         Choice("Offer to open the app (optional)", "OfferLaunch", offerLaunch, value => offerLaunch = value);
         Choice("Offer Start with Windows (optional)", "OfferStartup", offerStartup, value => offerStartup = value);
         var website = Choice("Offer the developer’s website (optional)", "OfferWebsite", offerWebsite, value => offerWebsite = value);
-        var label = Label("Developer website (optional)"); label.FontSize = 12; label.Margin = new(0, 5, 0, 3); choices.Children.Add(label);
-        var url = Identify(new TextBox { Text = developerWebsite, IsEnabled = offerWebsite, MaxLength = 2048, MinHeight = 36, Height = 36, FontSize = 13, Padding = new(10, 4, 10, 4), ToolTip = "An absolute http:// or https:// URL" }, "DeveloperWebsite");
+        var label = Label("Developer website (optional)"); label.FontSize = 12; label.Margin = new(0, 1, 0, 1); choices.Children.Add(label);
+        var url = Identify(new TextBox { Text = developerWebsite, IsEnabled = offerWebsite, MaxLength = 2048, MinHeight = 36, Height = 36, FontSize = 13, Padding = new(10, 0, 10, 0), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "An absolute http:// or https:// URL" }, "DeveloperWebsite");
         url.TextChanged += (_, _) => { developerWebsite = url.Text; Error.Text = ""; };
         website.Checked += (_, _) => url.IsEnabled = true; website.Unchecked += (_, _) => { url.IsEnabled = false; Error.Text = ""; };
         choices.Children.Add(url);
-        var card = new Border { Child = choices, Padding = new(12, 6, 12, 6), CornerRadius = new(8), BorderThickness = new(1) };
+        var card = new Border { Child = choices, Padding = new(12, 4, 12, 4), CornerRadius = new(8), BorderThickness = new(1) };
         card.SetResourceReference(Border.BackgroundProperty, "InputSurface"); card.SetResourceReference(Border.BorderBrushProperty, "Border"); panel.Children.Add(card);
     }
 }
