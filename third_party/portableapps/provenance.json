@@ -1,0 +1,9 @@
+{
+  "modifiedWizardSha256": "83A8E574F9E035E90A2C817C55703C19925D30584294C09D6ECC154CD0469793",
+  "version": "3.9.24",
+  "modification": "Clearly renamed silent packaging wizard; exact original and modified source included. Official installer code unchanged.",
+  "nsisVersion": "v3.13",
+  "source": "https://portableapps.com/apps/development/portableapps.com_installer",
+  "archiveSha256": "7EF6E2758CB578843D767FB5FAFDBDE8BF872B84F0ACD6E64F18AFBB05C04F00",
+  "archive": "PortableApps.comInstaller_3.9.24.paf.exe"
+}
