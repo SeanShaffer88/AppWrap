@@ -64,6 +64,10 @@ internal static class Program
             Check("256 icon frame", frames.Contains((256, 32)));
         }
         foreach (int size in new[] { 16, 32, 75, 128, 256 }) { var image = ImageAssets.Load(Path.Combine(images, $"appicon_{size}.png")); Check("PNG dimensions " + size, image.PixelWidth == size && image.PixelHeight == size); }
+        var transparent = System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, new byte[16], 8);
+        var alphaPath = Path.Combine(images, "transparent.png"); var alphaEncoder = new PngBitmapEncoder(); alphaEncoder.Frames.Add(BitmapFrame.Create(transparent)); using (var file = File.Create(alphaPath)) alphaEncoder.Save(file);
+        var alphaIcons = Path.Combine(images, "alpha"); ImageAssets.WriteIcons(alphaPath, alphaIcons); var alphaPixels = new byte[16 * 16 * 4]; ImageAssets.Load(Path.Combine(alphaIcons, "appicon_16.png")).CopyPixels(alphaPixels, 16 * 4, 0);
+        Check("selected icon alpha preserved", alphaPixels.Where((_, i) => i % 4 == 3).All(a => a == 0));
         var bmp = Path.Combine(images, "sidebar.bmp"); ImageAssets.WriteSidebar(Path.Combine(images, "appicon_128.png"), bmp);
         using (var reader = new BinaryReader(File.OpenRead(bmp))) { reader.BaseStream.Position = 18; Check("sidebar dimensions", reader.ReadInt32() == 164 && reader.ReadInt32() == 314); reader.BaseStream.Position = 28; Check("sidebar 24bit", reader.ReadUInt16() == 24); }
         var malformed = Path.Combine(images, "broken.png"); File.WriteAllText(malformed, "bad"); bool invalid = false; try { ImageAssets.Load(malformed); } catch (Exception) { invalid = true; } Check("malformed image rejected", invalid);
@@ -113,5 +117,3 @@ internal static class Program
         Console.WriteLine($"RESULT: {Passed.Count} checks passed. Evidence: {evidence}");
     }
 }
-
-

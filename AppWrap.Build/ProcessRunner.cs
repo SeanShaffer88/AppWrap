@@ -82,11 +82,16 @@ public static class ProcessRunner
     private static async Task<string> Drain(StreamReader reader, CancellationToken token)
     {
         var result = new StringBuilder();
+        bool truncated = false;
         var buffer = new char[4096];
         int count;
         while ((count = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
-            if (result.Length < 131072) result.Append(buffer, 0, Math.Min(count, 131072 - result.Length));
-        return result.ToString();
+        {
+            if (result.Length + count > 131072) truncated = true;
+            result.Append(buffer, 0, count);
+            if (result.Length > 131072) result.Remove(0, result.Length - 131072);
+        }
+        return (truncated ? "[earlier log output truncated]\n" : "") + result;
     }
 
     private sealed class ProcessJob : SafeHandleZeroOrMinusOneIsInvalid

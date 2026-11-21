@@ -42,4 +42,3 @@ public static class InnoSetupGenerator
         return script + $"\n[Run]\nFilename: \"{{app}}\\{exe}\"; Description: \"Open {name}\"; WorkingDir: \"{{app}}\\{Literal(Path.GetDirectoryName(input.MainExecutable) ?? "")}\"; Flags: nowait postinstall skipifsilent\n";
     }
 }
-

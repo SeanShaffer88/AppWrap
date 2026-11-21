@@ -54,5 +54,3 @@ internal static class PortableBuild
         }
     }
 }
-
-

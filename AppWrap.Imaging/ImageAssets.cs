@@ -11,11 +11,17 @@ public static class ImageAssets
     {
         if (new FileInfo(path).Length > 32 * 1024 * 1024) throw new IOException("Choose an image smaller than 32 MB.");
         using var stream = File.OpenRead(path);
-        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnDemand);
+        if (decoder.Frames.Count > 64) throw new IOException("Choose a still image or an icon with at most 64 frames.");
         var frame = decoder.Frames.OrderByDescending(f => f.PixelWidth).First();
         if (frame.PixelWidth > 8192 || frame.PixelHeight > 8192 || (long)frame.PixelWidth * frame.PixelHeight > 32_000_000)
             throw new IOException("Choose a picture up to 32 megapixels and 8192 pixels per side.");
-        frame.Freeze(); return frame;
+        // Read dimensions before pixel decoding, then copy just the selected bounded frame.
+        var converted = new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
+        var pixels = new byte[checked(frame.PixelWidth * frame.PixelHeight * 4)];
+        converted.CopyPixels(pixels, frame.PixelWidth * 4, 0);
+        var result = BitmapSource.Create(frame.PixelWidth, frame.PixelHeight, 96, 96, PixelFormats.Bgra32, null, pixels, frame.PixelWidth * 4);
+        result.Freeze(); return result;
     }
 
     public static BitmapSource DefaultIcon()
