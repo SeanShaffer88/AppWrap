@@ -1,0 +1,109 @@
+diff --git "a/C:\\Users\\Sean Shaffer\\Documents\\Codex\\2026-11-21\\c\\work\\wizard-diff\\original.nsi" "b/C:\\Users\\Sean Shaffer\\Documents\\Codex\\2026-11-21\\c\\work\\wizard-diff\\modified.nsi"
+index fa8b74c..e540190 100644
+--- "a/C:\\Users\\Sean Shaffer\\Documents\\Codex\\2026-11-21\\c\\work\\wizard-diff\\original.nsi"	
++++ "b/C:\\Users\\Sean Shaffer\\Documents\\Codex\\2026-11-21\\c\\work\\wizard-diff\\modified.nsi"	
+@@ -1,3 +1,4 @@
++;Modified by AppWrap contributors, 2026-11-21: silent wrapper and relative launch target validation.
+ ;Copyright 2007-2026 John T. Haller of PortableApps.com
+ ;Website: https://portableapps.com/
+ 
+@@ -18,7 +19,7 @@
+ ;along with this program; if not, write to the Free Software
+ ;Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ 
+-!define APPNAME "PortableApps.com Installer"
++!define APPNAME "AppWrap Packaging Builder (modified)"
+ !define VER "3.9.24.0"
+ !define WEBSITE "PortableApps.com/Installer"
+ !define FRIENDLYVER "3.9.24"
+@@ -26,22 +27,23 @@
+ 
+ ;=== Program Details
+ Name "${APPNAME}"
+-OutFile "..\..\PortableApps.comInstaller.exe"
++OutFile "..\..\AppWrapPackagingBuilder.exe"
+ Caption "${APPNAME}"
+ VIProductVersion "${VER}"
+ VIAddVersionKey ProductName "${APPNAME}"
+ VIAddVersionKey Comments "For additional details, visit ${WEBSITE}"
+-VIAddVersionKey CompanyName "PortableApps.com"
++VIAddVersionKey CompanyName "AppWrap contributors (modified wizard)"
+ VIAddVersionKey LegalCopyright "John T. Haller"
+ VIAddVersionKey FileDescription "${APPNAME}"
+ VIAddVersionKey FileVersion "${VER}"
+ VIAddVersionKey ProductVersion "${VER}"
+ VIAddVersionKey InternalName "${APPNAME}"
+ VIAddVersionKey LegalTrademarks "PortableApps.com is a trademark of Rare Ideas, LLC."
+-VIAddVersionKey OriginalFilename "PortableApps.comInstaller.exe"
++VIAddVersionKey OriginalFilename "AppWrapPackagingBuilder.exe"
+ 
+ ;=== Runtime Switches
+ Unicode true
++SilentInstall silent
+ ManifestDPIAware true
+ CRCCheck On
+ RequestExecutionLevel user
+@@ -275,6 +277,10 @@ Function .onInit
+ 	ReadINIStr $strInstallAppDirectory "$EXEDIR\Data\settings.ini" "InstallerWizard" "INSTALLAPPDIRECTORY"
+ 
+ 	${GetParameters} $R0
++${If} $R0 == ""
++  SetErrorLevel 2
++  Quit
++${EndIf}
+ 	${If} $R0 != ""
+ 		StrCpy $strInstallAppDirectory $R0
+ 		StrCpy $bolSkipWelcomePage "true"
+@@ -287,6 +293,16 @@ Function .onInit
+ 		${EndIf}
+ 	${EndIf}
+ 
++		StrCpy $bolInteractiveMode "false"
++	StrCpy $bolAutomaticCompile "true"
++	StrCpy $bolSkipWelcomePage "true"
++	StrCpy $bolPluginInstaller "false"
++	StrCpy $strAppInfoINIFile "$strInstallAppDirectory\App\AppInfo\appinfo.ini"
++	StrCpy $strInstallerINIFile "$strInstallAppDirectory\App\AppInfo\installer.ini"
++	${IfNot} ${FileExists} "$strAppInfoINIFile"
++		SetErrorLevel 2
++		Quit
++	${EndIf}
+ 	;=== Pre-Fill Path with Directory
+ 	;WriteINIStr $PLUGINSDIR\InstallerWizardForm.ini "Field 2" "State" "$strInstallAppDirectory"
+ FunctionEnd
+@@ -524,9 +540,9 @@ Section Main
+ 	${EndIf}
+ 
+ 	;Check for content
+-	${IfNot} ${FileExists} "$strInstallAppDirectory\*.exe"
+-	${AndIf} $bolPluginInstaller != "true"
+-		${WriteErrorToLog} "No EXE in $strInstallAppDirectory."
++	ReadINIStr $R0 $strAppInfoINIFile "Control" "Start"
++	${IfNot} ${FileExists} "$strInstallAppDirectory\$R0"
++		${WriteErrorToLog} "The selected launch file is missing."
+ 	${EndIf}
+ 
+ 	${IfNot} ${FileExists} "$strInstallAppDirectory\help.html"
+@@ -1356,7 +1372,7 @@ Section Main
+ 		SetDetailsPrint none
+ 		Delete "$0\$strInstallerFilename.paf.exe"
+ 		${If} ${FileExists} "$0\$strInstallerFilename.paf.exe"
+-			MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to delete file: $0\$strInstallerFilename.paf.exe.  Please be sure the file is not in use"
++			;AppWrap: noninteractive error is recorded on the following line.
+ 			${WriteErrorToLog} "Unable to delete file: $0\$strInstallerFilename.paf.exe.  Please be sure the file is not in use."
+ 		${Else}
+ 			${If} ${FileExists} "$strInstallAppDirectory\App\AppInfo\appinfo.ini"
+@@ -1450,7 +1466,12 @@ Section Main
+ 	;Remove the Source and Other directories if empty
+ 	RMDir "$strInstallAppDirectory\Other\Source"
+ 	RMDir "$strInstallAppDirectory\Other"
+-	${TBProgress_State} NoProgress 
++	${TBProgress_State} NoProgress
++	${If} $bolErrorOccurred == "true"
++		SetErrorLevel 1
++	${Else}
++		SetErrorLevel 0
++	${EndIf} 
+ SectionEnd
+ 
+ Function FinishPagePre
