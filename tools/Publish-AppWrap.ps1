@@ -1,6 +1,6 @@
 param([string]$Destination)
 $ErrorActionPreference='Stop'
-$Version='0.2.3'
+$Version='0.2.4'
 $repository=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if(!$Destination){$Destination=[IO.Path]::GetFullPath((Join-Path $repository "../../outputs/AppWrap-$Version-win-x64"))}
 if(Test-Path -LiteralPath $Destination){throw 'Publish destination must be new. Preserve the previous artifact and choose a different destination.'}
@@ -13,7 +13,7 @@ if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 # native/AppWrapCliShim.c) that forwards to AppWrap.exe --cli.
 Copy-Item -LiteralPath (Join-Path $repository 'native/AppWrap.Cli.exe') -Destination (Join-Path $Destination 'AppWrap.Cli.exe')
 New-Item -ItemType Directory -Path (Join-Path $Destination 'third_party') | Out-Null
-foreach($backend in @('innosetup','portableapps','pal')){
+foreach($backend in @('innosetup','portableapps','pal','engines')){
   Copy-Item -LiteralPath (Join-Path $repository "third_party/$backend") -Destination (Join-Path $Destination 'third_party') -Recurse
 }
 foreach($file in @('README.md','LICENSE','THIRD-PARTY-NOTICES.md')){Copy-Item -LiteralPath (Join-Path $repository $file) -Destination $Destination}

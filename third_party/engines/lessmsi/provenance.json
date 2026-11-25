@@ -1,0 +1,10 @@
+{
+  "engine": "LessMsi",
+  "version": "2.12.9",
+  "archive": "lessmsi-v2.12.9.zip",
+  "downloadUrl": "https://github.com/activescott/lessmsi/releases/download/v2.12.9/lessmsi-v2.12.9.zip",
+  "sha256Pinned": false,
+  "sha256Observed": "5b4e187e74b184ad3a63ccf06c3d17dae2b8c4b6c298a996dbd51a9f6db29d21",
+  "md5Verified": false,
+  "preparedUtc": "2026-11-25T19:07:15.0068935Z"
+}
