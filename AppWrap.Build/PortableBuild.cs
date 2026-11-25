@@ -37,10 +37,30 @@ internal static class PortableBuild
             await resource.CopyToAsync(guardFile, token).ConfigureAwait(false);
         // These settings are coupled to the trusted embedded guard. No caller-supplied hook is accepted.
         await File.WriteAllTextAsync(Path.Combine(package, "Other", "Source", "PortableApps.comInstallerCustom.nsh"), UpgradeGuardGenerator.Generate(input, guardPath), new UTF8Encoding(true), token).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(metadataDir, "installer.ini"), UpgradeGuardGenerator.InstallerSettings, new UTF8Encoding(true), token).ConfigureAwait(false);
         // A Pal profile replaces the basic launch shim with a real compiled PAL launcher.
         // PackagingOnly (or no profile) keeps the existing shim path unchanged below.
         PortableProfile? palProfile = input.Profile is { ExecutionKind: PortableExecutionKind.Pal } profile ? profile : null;
+        var installerText = UpgradeGuardGenerator.InstallerSettings;
+        if (palProfile is not null)
+        {
+            // P4: the profile's installer document is validated before anything is
+            // written from it, and merged over the guard settings with the guard
+            // always winning. A profile with no installer entries keeps the exact
+            // guard-only text.
+            var installerErrors = InstallerValidator.ValidateInstaller(palProfile, PortableAppsGenerator.PackageId(input))
+                .Where(d => d.Severity == ProfileSeverity.Error).ToList();
+            if (installerErrors.Count != 0)
+                throw new UserInputException("The portable profile's installer settings are not ready to build: " +
+                    string.Join(" ", installerErrors.Take(5).Select(d => d.Message)) +
+                    (installerErrors.Count > 5 ? $" (+{installerErrors.Count - 5} more problems)" : ""));
+            if (palProfile.Installer.AllEntries.Any())
+                installerText = InstallerDocumentMerger.Merge(UpgradeGuardGenerator.InstallerSettings, palProfile.Installer);
+            // The profile's metadata document is validated above (AppID conflicts,
+            // PackageVersion shape) but deliberately does NOT replace the generated
+            // appinfo.ini here: PortableAppsGenerator output stays canonical in P4,
+            // and reconciling profile metadata into it is a P5 workspace concern.
+        }
+        await File.WriteAllTextAsync(Path.Combine(metadataDir, "installer.ini"), installerText, new UTF8Encoding(true), token).ConfigureAwait(false);
         if (palProfile is not null)
         {
             var errors = PortableProfileValidator.Validate(palProfile).Where(d => d.Severity == ProfileSeverity.Error).ToList();

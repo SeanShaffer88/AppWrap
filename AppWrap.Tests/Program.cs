@@ -38,6 +38,7 @@ internal static class Program
         ProfileChecks.Run(Check, Reject);
         await PalChecks.RunAsync(root, evidence, input, Check, Reject);
         PlannerChecks.Run(Check, Reject);
+        InstallerChecks.Run(Check, Reject);
         StandardOptionsChecks.Run(input, Check, Reject);
         UpgradeGuardChecks.Run(input, Check, Reject);
         await BackendLogChecks.Run(evidence, Check);
