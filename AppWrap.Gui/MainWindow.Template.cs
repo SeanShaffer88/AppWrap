@@ -74,9 +74,15 @@ public partial class MainWindow
         var folderRow = new Grid { Margin = new(0, 0, 0, 10) };
         folderRow.ColumnDefinitions.Add(new());
         folderRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var folderText = Identify(new TextBox { Text = string.IsNullOrEmpty(templateFolder) ? "Choose a new, empty folder for the project" : templateFolder, ToolTip = templateFolder, Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsReadOnly = true, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TemplateFolder");
+        var folderText = Identify(new TextBox { Text = templateFolder, ToolTip = "Type or paste the new project folder, or use Choose folder…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TemplateFolder");
         folderText.SetResourceReference(Control.ForegroundProperty, "Text");
         folderRow.Children.Add(folderText);
+        WirePathCommit(folderText, text =>
+        {
+            var folder = WizardPaths.NormalizePathText(text);
+            if (WizardPaths.SamePath(folder, templateFolder)) { Render(); return; }
+            templateFolder = folder; templateNote = null; templateDiagnostics = null; Render();
+        });
         var chooseFolder = Identify(new Button { Content = "Choose folder…", Padding = new(12, 6, 12, 6), MinHeight = 40, FontSize = 13 }, "TemplateChooseDestination");
         chooseFolder.Click += (_, _) =>
         {

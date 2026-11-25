@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using AppWrap.Build;
 using AppWrap.Core;
@@ -58,7 +59,18 @@ public partial class MainWindow : Window
     private TextBlock Label(string text) { var label = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 8) }; label.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); return label; }
     private void Scanning(bool value)
     { scanning = value; Page.IsEnabled = !value; Formats.IsEnabled = !value; NextButton.IsEnabled = !value; BackButton.IsEnabled = !value; }
-    private void SelectFile(StackPanel panel, string label, string id, string? selected, Action choose, bool optional = false)
+    /// <summary>
+    /// Wires an editable path box to its commit action: Enter or focus loss
+    /// commits the typed/pasted text. Enter is marked handled so it cannot
+    /// also trigger the window's default Next button.
+    /// </summary>
+    private void WirePathCommit(TextBox box, Action<string> commit)
+    {
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; commit(box.Text); } };
+        box.LostFocus += (_, _) => commit(box.Text);
+    }
+
+    private void SelectFile(StackPanel panel, string label, string id, string? selected, Action choose, bool optional = false, bool editable = false, Action<string>? commitPath = null)
     {
         panel.Children.Add(Label(label));
         var grid = new Grid(); grid.ColumnDefinitions.Add(new() { Width = new GridLength(42) }); grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -69,7 +81,8 @@ public partial class MainWindow : Window
             try { var thumbnail = new Image { Source = AppWrap.Imaging.ImageAssets.Load(selected), Width = 34, Height = 48, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Selected image preview" }; glyph.Visibility = Visibility.Collapsed; grid.Children.Add(thumbnail); }
             catch (Exception) { Error.Text = "This picture could not be opened. Choose another image or use the default."; }
         }
-        var path = Identify(new TextBox { Text = string.IsNullOrEmpty(selected) ? optional ? "Use the default, or pick a picture" : step == 0 ? "Choose a folder to get started" : "Choose where to save your package" : selected, IsReadOnly = true, Style = null, BorderThickness = new(0), Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, ToolTip = selected, Padding = new(0, 8, 8, 8), Margin = new(0, 0, 12, 0) }, id);
+        var path = Identify(new TextBox { Text = editable ? selected ?? "" : string.IsNullOrEmpty(selected) ? optional ? "Use the default, or pick a picture" : step == 0 ? "Choose a folder to get started" : "Choose where to save your package" : selected, IsReadOnly = !editable, Style = null, BorderThickness = new(0), Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, ToolTip = editable ? "Type or paste a path, or use the button to browse" : selected, Padding = new(0, 8, 8, 8), Margin = new(0, 0, 12, 0) }, id);
+        if (editable && commitPath != null) WirePathCommit(path, commitPath);
         path.SetResourceReference(Control.ForegroundProperty, "Text");
         Grid.SetColumn(path, 1); grid.Children.Add(path);
         var button = Identify(new Button { Content = optional ? "Choose image…" : step == 0 ? "Choose folder…" : "Save as…", MinWidth = 138, VerticalAlignment = VerticalAlignment.Center }, "Browse" + id);
@@ -104,7 +117,7 @@ public partial class MainWindow : Window
         Steps.Maximum = TotalSteps; Steps.Value = step + 1; Steps.IsIndeterminate = busy;
         var panel = Panel();
         if (testPanelOpen) { RenderTestPanel(panel); return; }
-        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (UsesPortable) { var testButton = Identify(new Button { Content = "Test package…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TestPackageOpen"); testButton.Click += (_, _) => OpenTestPanel(); panel.Children.Add(testButton); } if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
+        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (UsesPortable) { var testButton = Identify(new Button { Content = "Test package…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TestPackageOpen"); testButton.Click += (_, _) => OpenTestPanel(); panel.Children.Add(testButton); } var another = Identify(new Button { Content = "Package another app", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "PackageAnother"); another.Click += (_, _) => ResetWizard(); panel.Children.Add(another); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
         if (configOpen && configWorkspace is not null) { RenderProjectConfig(panel); return; }
         if (templateOpen) { RenderTemplatePanel(panel); return; }
@@ -113,7 +126,7 @@ public partial class MainWindow : Window
             case 0:
                 Question.Text = "Where is your application?";
                 Hint.Text = !UsesPortable ? "Choose the folder that contains your app and the files it needs." : "Choose an app that is already portable. Packaging cannot move its settings or remove its dependencies.";
-                SelectFile(panel, "Application folder", "SourceFolder", source, BrowseSource);
+                SelectFile(panel, "Application folder", "SourceFolder", source, BrowseSource, editable: true, commitPath: CommitSourceText);
                 if (loadedProject is not null)
                 {
                     var configButton = Identify(new Button { Content = "Project configuration…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "ProjectConfigOpen");
@@ -172,11 +185,33 @@ public partial class MainWindow : Window
         if (scanning || busy) return;
         var dialog = new OpenFolderDialog { Title = "Choose your application folder", Multiselect = false };
         if (dialog.ShowDialog(this) != true) { pendingTemplate = null; return; }
-        source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); developerWebsite = ""; InvalidateOutputName(); executable = "";
+        await AcceptSourceAsync(dialog.FolderName);
+    }
+
+    /// <summary>
+    /// Commits a typed/pasted source folder through the exact flow browsing
+    /// uses. Blank text, or text naming the folder already chosen, is a
+    /// no-op; anything else is attempted for real, so an invalid or missing
+    /// folder surfaces the usual error instead of silently keeping the
+    /// previous folder on screen.
+    /// </summary>
+    private void CommitSourceText(string text)
+    {
+        if (scanning || busy) return;
+        var folder = WizardPaths.NormalizePathText(text);
+        if (folder.Length == 0 || WizardPaths.SamePath(folder, source)) { Render(); return; }
+        _ = AcceptSourceAsync(folder);
+    }
+
+    private async Task AcceptSourceAsync(string folder)
+    {
+        if (scanning || busy) return;
+        source = folder; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); developerWebsite = ""; InvalidateOutputName(); executable = "";
         try
         {
             Scanning(true);
             var chosen = source;
+            if (!Directory.Exists(chosen)) throw new UserInputException("Choose the folder containing your application.");
             var template = pendingTemplate; pendingTemplate = null;
             var scanned = await Task.Run(() => (Project: LoadProject(chosen, template), Executables: InputRules.Executables(chosen)));
             executables = scanned.Executables; ApplyLoadedProject(scanned.Project);

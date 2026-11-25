@@ -2,6 +2,8 @@
 
 `PackageNaming.GetFileName(name, version, mode, style)` is the canonical pure naming API. `PackageNamingStyle` offers `NameVersionSetup` (default), `NameOnly` and `NameSetupVersion`; `Labels` supplies readable UI choices and `ValidateName` applies the shared Windows filename rules. An unknown saved style falls back to the current default. The entered valid version is retained in the output filename, while `InputRules.PackageVersion` separately produces four-part metadata.
 
+`WizardPaths` holds the pure text rules behind the wizard's editable path fields: `NormalizePathText` trims whitespace and one pair of surrounding quotes from typed/pasted paths, `SamePath` compares paths case-insensitively, and `ReconcileSuggestion` decides whether a chosen destination follows a moved suggestion (it does only while it still echoes the previous suggestion; a diverged custom path is left alone).
+
 Windows .NET 10 input contracts and filesystem validation, shared by the wizard and packaging services. Original AppWrap code uses the repository's MIT license; there are no third-party package dependencies.
 
 Public API: immutable `AppWrapInput`, `OutputMode`, `UserInputException`, and `InputRules` (`Validate`, `Executables`, `PackageVersion`, `SafeId`, `SafePath`, `IsWithin`, `Text`). Validation and executable discovery read the selected local filesystem; they do not run applications, write settings, start processes, or use the network. Importing the assembly has no background side effects. Exceptions describe rejected paths and inputs.

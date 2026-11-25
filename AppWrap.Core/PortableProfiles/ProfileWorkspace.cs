@@ -147,6 +147,19 @@ public sealed class ProfileWorkspaceState
     private static PortableProfile EmptyPalProfile() =>
         PortableProfileCodec.FromIniTexts("", "", null, null, PortableExecutionKind.Pal);
 
+    /// <summary>
+    /// Returns the workspace to its fresh-launch state: an empty working
+    /// profile in "Already portable" (packaging-only) mode with no wizard
+    /// identity attached, so nothing from a previous package can leak into
+    /// the next one. Pure state change — nothing is written anywhere.
+    /// </summary>
+    public void Reset()
+    {
+        _profile = EmptyPalProfile();
+        Mode = PortableExecutionKind.PackagingOnly;
+        WizardAppId = null;
+    }
+
     /// <summary>Starts a fresh, empty Pal profile and switches the workspace to Configure mode.</summary>
     public void NewProfile()
     {

@@ -26,10 +26,60 @@ public partial class MainWindow
 
     private string GeneratedName(OutputMode mode) => PackageNaming.GetFileName(name.Trim(), version.Trim(), mode, namingStyle);
     private string SingleDestination => string.IsNullOrEmpty(output) ? Path.Combine(outputFolder, GeneratedName(Mode)) : output;
+    /// <summary>The destination AppWrap suggested at the last render — the baseline the reconciliation rule compares a chosen destination against.</summary>
+    private string suggestedOutput = "";
+    private string SuggestedDestination() => Path.Combine(outputFolder, GeneratedName(Mode));
     private void InvalidateOutputName()
     {
-        if (!string.IsNullOrEmpty(output)) outputFolder = Path.GetDirectoryName(Path.GetFullPath(output))!;
-        output = "";
+        // Name, version, mode or filename style changed, so the suggested
+        // destination moved. A chosen destination (Save as… or typed) that
+        // merely echoes the previous suggestion follows it; a diverged
+        // custom path is the user's own text and is left alone, keeping
+        // its folder. With no override there is nothing to reconcile.
+        var next = SuggestedDestination();
+        if (!string.IsNullOrEmpty(output))
+        {
+            var reconciled = WizardPaths.ReconcileSuggestion(output, suggestedOutput, next);
+            output = WizardPaths.SamePath(reconciled, next) ? "" : reconciled;
+            var basis = string.IsNullOrEmpty(output) ? next : output;
+            if (Path.GetDirectoryName(Path.GetFullPath(basis)) is { Length: > 0 } folder) outputFolder = folder;
+        }
+        suggestedOutput = next;
+    }
+
+    /// <summary>
+    /// Commits a typed/pasted destination from the output step's editable
+    /// box. For folder destinations (Both, PAF Package) the text is the
+    /// destination folder; otherwise it is the full package file path.
+    /// Relative text resolves against the current output folder. Build
+    /// still runs the usual destination validation afterwards.
+    /// </summary>
+    private void CommitOutputText(string text)
+    {
+        var typed = WizardPaths.NormalizePathText(text);
+        if (typed.Length == 0) { Render(); return; }
+        try
+        {
+            var full = Path.GetFullPath(Path.IsPathRooted(typed) ? typed : Path.Combine(outputFolder, typed));
+            if (FolderDestination)
+            {
+                if (WizardPaths.SamePath(full, outputFolder) && destinationChosen) { Render(); return; }
+                outputFolder = full;
+            }
+            else
+            {
+                if (WizardPaths.SamePath(full, SingleDestination) && destinationChosen) { Render(); return; }
+                output = full;
+                if (Path.GetDirectoryName(full) is { Length: > 0 } folder) outputFolder = folder;
+            }
+            destinationChosen = true;
+            Render();
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            Render();
+            ShowError(new UserInputException("That location is not a valid path. Check it and try again."));
+        }
     }
 
     private void RenderOutput(StackPanel panel)
@@ -48,9 +98,11 @@ public partial class MainWindow
             Grid.SetColumn(styles, 1); namingRow.Children.Add(styles); panel.Children.Add(namingRow);
         }
         var location = new Grid(); location.ColumnDefinitions.Add(new()); location.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var value = destinationChosen ? FolderDestination ? outputFolder : SingleDestination : "Choose where to save your package";
-        var path = Identify(new TextBox { Text = value, ToolTip = value, Style = null, BorderThickness = new(0), Background = Brushes.Transparent, IsReadOnly = true, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, FolderDestination ? "OutputFolder" : "OutputPath");
+        var value = FolderDestination ? outputFolder : SingleDestination;
+        suggestedOutput = SuggestedDestination();
+        var path = Identify(new TextBox { Text = value, ToolTip = "Type or paste a path, or use the button to browse", Style = null, BorderThickness = new(0), Background = Brushes.Transparent, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, FolderDestination ? "OutputFolder" : "OutputPath");
         path.SetResourceReference(Control.ForegroundProperty, "Text"); location.Children.Add(path);
+        WirePathCommit(path, CommitOutputText);
         outputLocationDisplay = path;
         var choose = Identify(new Button { Content = FolderDestination ? "Choose folder…" : "Save as…", Padding = new(12, 6, 12, 6), MinHeight = 40, FontSize = 13 }, FolderDestination ? "BrowseOutputFolder" : "BrowseOutputPath");
         choose.Click += (_, _) => BrowseOutput(); Grid.SetColumn(choose, 1); location.Children.Add(choose);
@@ -63,7 +115,8 @@ public partial class MainWindow
 
     private void UpdateOutputPreview()
     {
-        if (outputLocationDisplay != null) { outputLocationDisplay.Text = destinationChosen ? FolderDestination ? outputFolder : SingleDestination : "Choose where to save your package"; outputLocationDisplay.ToolTip = outputLocationDisplay.Text; }
+        if (outputLocationDisplay != null) { outputLocationDisplay.Text = FolderDestination ? outputFolder : SingleDestination; outputLocationDisplay.ToolTip = "Type or paste a path, or use the button to browse"; }
+        suggestedOutput = SuggestedDestination();
         foreach (var preview in filenamePreviews) { preview.Text.Text = IsBoth ? GeneratedName(preview.Mode) : IsPaf ? PafFolderName : Path.GetFileName(SingleDestination); preview.Text.ToolTip = preview.Text.Text; }
     }
 
