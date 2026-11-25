@@ -43,7 +43,7 @@ public static class CliModeDetector
     public const string ShimMarker = "--cli";
 
     /// <summary>First arguments that select the CLI when given directly to AppWrap.exe.</summary>
-    public static IReadOnlyList<string> Commands { get; } = ["build", "project", "config", "profile", "test"];
+    public static IReadOnlyList<string> Commands { get; } = ["build", "project", "config", "profile", "test", "audit"];
 
     /// <summary>Global flags that select the CLI as a first argument.</summary>
     public static IReadOnlyList<string> GlobalFlags { get; } = ["--help", "--version"];

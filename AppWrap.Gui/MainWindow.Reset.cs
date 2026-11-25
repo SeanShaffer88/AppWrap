@@ -46,6 +46,9 @@ public partial class MainWindow
         templateAdvanced = false;
         templateNote = null; templateDiagnostics = null; pendingTemplate = null;
 
+        auditPanelOpen = false; auditBusy = false;
+        auditFile = ""; auditReport = null; auditNote = null;
+
         testPanelOpen = false; testBusy = false;
         testMode = TestRunMode.Portable;
         testFolder = ""; testReport = null; testReportFile = null; testNote = null;

@@ -229,6 +229,7 @@ violations.
 | `--launch <file>` | Launch file at the package root. Default: the package's appinfo `[Control] Start`, else its sole root `.exe`. |
 | `--timeout <seconds>` | 1–3600. Default 60. On timeout the app is asked to close, then terminated. |
 | `--report <path>` | Default: `Data/TestReports/test-report-<yyyyMMdd-HHmmss>.json` beside the CLI (the GUI's convention). |
+| `--registry` | Also observe the registry (Windows only): the HKCU/HKLM `Software` roots are snapshotted before and after the run; registry violations fail the verdict. The wizard's Test panel always observes the registry. The JSON result gains `registryObserved`, `registryChanges` and `registryViolations`. |
 
 Exit 0 on verdict Pass, 4 on verdict Fail — the report is written either
 way. JSON `result`:
@@ -241,6 +242,35 @@ way. JSON `result`:
                     "change": "Created", "category": "ProfileLeakage" } ],
   "cleanupWarning": null }
 ```
+
+### `audit <source>` — portable-conversion audit
+
+Audits a setup `.exe`/`.msi` or portable `.zip` for conversion to a
+PortableApps.com package: where the app stores data and which registry
+entries it creates (`docs/AUDIT.md`). Static by default — nothing is
+executed: a zip is inventoried (and extracted under
+`Data/Audit/<name>-<id>` beside the CLI, kept so `build --source` can
+package the payload), an `.msi`'s tables are read, an `.exe` is
+identified by family with its payload stated as an audit limit.
+
+| Option | Meaning |
+| --- | --- |
+| `--runtime` | The explicit second pass (Windows only, `.exe`/`.msi` only): silently install into a scratch folder, launch the installed app once, and merge the observed registry writes into the findings. Never part of a build. |
+| `--draft <profile.json>` | Synthesize a DRAFT portable profile from the findings and save it in the wizard's profile `.json` shape. The draft is untrusted until reviewed and saved in the profile workspace; if the draft itself has validation errors the command exits 3 (the file is still written). |
+| `--report <path>` | Write the full audit report JSON (`audit-report` shape: source, kind, payload folder, main executable, typed findings with evidence and confidence). |
+| `--launch <file>` | For `--runtime`: the installed app's launch file relative to the install folder. Default: the inventoried main `.exe`. |
+| `--silent-args <args>` | For `--runtime` with an `.exe`: the installer's silent arguments as one string, for families AppWrap does not know. An unknown family without this is refused, never run interactively. |
+| `--msi-fixture <file>` | Read MSI tables from a recorded fixture JSON instead of `msi.dll` (non-Windows hosts and checks). |
+
+JSON `result`: `{ "source", "sourceKind", "payloadFolder", "mainExecutable",
+"findings": [ { "kind", "subject", "detail", "evidence", "confidence",
+"hardWarning" } ], "hardWarnings", "draftProfile", "draftNotes",
+"draftUnmapped", "reportPath" }` (draft/report fields only when requested).
+
+A reviewed draft builds like any saved profile:
+`appwrap build --source <payloadFolder> --mode paf --audit-draft <profile.json>`
+(`--audit-draft` is `--profile` under its audit name; the two cannot be
+combined).
 
 ### `gui`
 

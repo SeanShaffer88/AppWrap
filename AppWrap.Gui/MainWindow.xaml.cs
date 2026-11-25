@@ -116,6 +116,7 @@ public partial class MainWindow : Window
         QuestionBlock.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
         Steps.Maximum = TotalSteps; Steps.Value = step + 1; Steps.IsIndeterminate = busy;
         var panel = Panel();
+        if (auditPanelOpen) { RenderAuditPanel(panel); return; }
         if (testPanelOpen) { RenderTestPanel(panel); return; }
         if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (UsesPortable) { var testButton = Identify(new Button { Content = "Test package…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TestPackageOpen"); testButton.Click += (_, _) => OpenTestPanel(); panel.Children.Add(testButton); } var another = Identify(new Button { Content = "Package another app", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "PackageAnother"); another.Click += (_, _) => ResetWizard(); panel.Children.Add(another); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
@@ -136,6 +137,12 @@ public partial class MainWindow : Window
                 var templateButton = Identify(new Button { Content = "New project from template…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TemplateOpen");
                 templateButton.Click += (_, _) => OpenTemplatePanel();
                 panel.Children.Add(templateButton);
+                if (UsesPortable)
+                {
+                    var auditButton = Identify(new Button { Content = "Convert a setup or zip…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "AuditOpen");
+                    auditButton.Click += (_, _) => OpenAuditPanel();
+                    panel.Children.Add(auditButton);
+                }
                 break;
             case 1:
                 Question.Text = "What is your app called?"; Hint.Text = "Use the name and version people should see when they install it.";

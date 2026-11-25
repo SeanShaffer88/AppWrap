@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AppWrap.Build;
+using AppWrap.Build.Audit;
 using AppWrap.Core;
+using AppWrap.Core.Audit;
 using AppWrap.Core.PortableProfiles;
 using AppWrap.Core.Projects;
 using AppWrap.Core.TestHarness;
@@ -109,6 +111,7 @@ public static class CommandRouter
                 "config set" => ConfigSet(invocation),
                 "profile validate" => ProfileValidate(invocation),
                 "test" => await TestAsync(invocation, environment, token).ConfigureAwait(false),
+                "audit" => await AuditAsync(invocation, environment, token).ConfigureAwait(false),
                 "gui" => Gui(environment),
                 _ => throw new CliUsageException($"Unknown command '{invocation.CommandKey}'."),
             };
@@ -161,10 +164,12 @@ public static class CommandRouter
         var projectSidebar = project?.SidebarImagePath is { } sidebarPath ? ProjectStore.ResolveStoredPath(projectRoot!, sidebarPath) : null;
         var effective = options.WithProjectDefaults(project?.Name, projectStyle, projectIcon, projectSidebar);
 
+        if (effective.Profile is not null && effective.AuditDraft is not null)
+            throw new CliUsageException("Use either --profile or --audit-draft, not both.", "build");
         PortableProfile? profile = null;
-        if (effective.Profile is not null)
+        if (effective.Profile is not null || effective.AuditDraft is not null)
         {
-            var (loaded, _) = LoadProfileFile(effective.Profile);
+            var (loaded, _) = LoadProfileFile(effective.Profile ?? effective.AuditDraft!);
             profile = loaded;
             var diagnostics = PortableProfileValidator.Validate(loaded).Select(FromProfileDiagnostic).ToList();
             result.Diagnostics.AddRange(diagnostics);
@@ -719,7 +724,9 @@ public static class CommandRouter
             : Path.Combine(environment.StateDirectory, "TestReports", "test-report-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
         var appName = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
         var request = new TestRunRequest(appName, mode, folder, reportPath, invocation.Value("launch"), timeout);
-        var run = await AppWrap.Build.TestHarness.RunAsync(request, token).ConfigureAwait(false);
+        var run = invocation.Has("registry")
+            ? await AppWrap.Build.TestHarness.RunAsync(request, new ProcessTestRunner(), token, new WindowsRegistrySnapshotProvider(), null).ConfigureAwait(false)
+            : await AppWrap.Build.TestHarness.RunAsync(request, token).ConfigureAwait(false);
         var report = run.Report;
         var violations = new JsonArray();
         foreach (var write in report.Violations)
@@ -739,6 +746,9 @@ public static class CommandRouter
             ["durationSeconds"] = report.DurationSeconds,
             ["detectedWrites"] = report.DetectedWrites.Count,
             ["violations"] = violations,
+            ["registryObserved"] = report.RegistryObserved,
+            ["registryChanges"] = report.RegistryChangeList.Count,
+            ["registryViolations"] = report.RegistryViolationList.Count,
             ["cleanupWarning"] = run.CleanupWarning,
         };
         result.Lines.Add("Verdict: " + report.Verdict);
@@ -747,6 +757,114 @@ public static class CommandRouter
         result.Lines.Add("Report: " + run.ReportPath);
         if (run.CleanupWarning is not null) result.Lines.Add("Warning: " + run.CleanupWarning);
         if (report.Verdict != TestVerdict.Pass) result.ExitCode = 4;
+        return result;
+    }
+
+    // ----- audit -----------------------------------------------------------
+
+    /// <summary>
+    /// The conversion audit: static by default (zip inventory, MSI tables,
+    /// .reg parsing, exe family identification — nothing executed), with
+    /// --runtime as the explicit second pass through the runtime auditor.
+    /// --draft synthesizes a draft portable profile from the findings and
+    /// saves it in the wizard's profile .json shape; like every import it
+    /// is untrusted until reviewed and saved in the profile workspace.
+    /// For a zip source the payload is extracted into a scratch folder
+    /// under the state directory and kept (its path is in the result), so
+    /// `build --source &lt;payloadFolder&gt;` can package it next.
+    /// </summary>
+    private static async Task<CliResult> AuditAsync(CliInvocation invocation, CliEnvironment environment, CancellationToken token)
+    {
+        var result = new CliResult { Command = invocation.CommandKey };
+        var source = Path.GetFullPath(invocation.Positionals[0]);
+        InputRules.SafePath(source);
+        if (!File.Exists(source)) throw new UserInputException("Choose a setup .exe/.msi or portable .zip file that still exists.");
+        var extension = Path.GetExtension(source).ToLowerInvariant();
+        if (extension is not (".zip" or ".msi" or ".exe"))
+            throw new CliUsageException($"audit takes a .zip, .msi or .exe source; got '{extension}'.", "audit");
+
+        AppWrap.Core.Audit.AuditReport report;
+        string? payloadFolder = null;
+        if (invocation.Has("runtime"))
+        {
+            if (extension == ".zip")
+                throw new CliUsageException("--runtime applies to a setup .exe/.msi. Audit the zip statically, then build and use 'test' on the package.", "audit");
+            var silentArgs = invocation.Value("silent-args")?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var runtime = await RuntimeAuditor.RunAsync(new RuntimeAuditRequest(
+                source, invocation.Value("launch"), silentArgs), token).ConfigureAwait(false);
+            report = runtime.Report;
+            result.Lines.Add($"Runtime pass: installer exit {(runtime.InstallerExitCode?.ToString() ?? "unknown")}, app exit {(runtime.AppExitCode?.ToString() ?? "not launched")}{(runtime.AppTimedOut ? " (timed out)" : "")}, {runtime.RegistryChanges.Count} registry change(s).");
+            if (runtime.CleanupWarning is not null) result.Lines.Add("Warning: " + runtime.CleanupWarning);
+        }
+        else if (extension == ".zip")
+        {
+            var scratch = Path.Combine(environment.StateDirectory, "Audit", Path.GetFileNameWithoutExtension(source) + "-" + Guid.NewGuid().ToString("N")[..8]);
+            report = await Task.Run(() => StaticAuditor.AuditZip(source, scratch, token), token).ConfigureAwait(false);
+            payloadFolder = scratch;
+        }
+        else if (extension == ".msi")
+        {
+            IMsiReader reader = invocation.Value("msi-fixture") is { } fixture
+                ? FixtureMsiReader.FromJson(File.ReadAllText(Path.GetFullPath(fixture)))
+                : new WindowsMsiReader();
+            report = await Task.Run(() => StaticAuditor.AuditMsi(source, reader), token).ConfigureAwait(false);
+        }
+        else
+        {
+            report = await Task.Run(() => StaticAuditor.AuditExe(source), token).ConfigureAwait(false);
+        }
+
+        var findings = new JsonArray();
+        foreach (var finding in report.Findings)
+        {
+            findings.Add(new JsonObject
+            {
+                ["kind"] = finding.Kind.ToString(), ["subject"] = finding.Subject, ["detail"] = finding.Detail,
+                ["evidence"] = finding.Evidence, ["confidence"] = finding.Confidence.ToString(), ["hardWarning"] = finding.HardWarning,
+            });
+            result.Lines.Add($"{finding.Kind}: {finding.Subject} — {finding.Detail} [{finding.Evidence}; confidence {finding.Confidence}{(finding.HardWarning ? "; HARD WARNING" : "")}]");
+        }
+        result.Data = new JsonObject
+        {
+            ["source"] = report.SourcePath, ["sourceKind"] = report.SourceKind.ToString(),
+            ["payloadFolder"] = payloadFolder ?? report.PayloadFolder, ["mainExecutable"] = report.MainExecutable,
+            ["findings"] = findings, ["hardWarnings"] = report.Findings.Count(f => f.HardWarning),
+        };
+        result.Lines.Add($"Audited {report.SourceKind} source: {report.Findings.Count} finding(s), {report.Findings.Count(f => f.HardWarning)} hard warning(s).");
+
+        if (invocation.Value("report") is { } reportPath)
+        {
+            var full = Path.GetFullPath(reportPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, report.ToJson());
+            result.Data["reportPath"] = full;
+            result.Lines.Add("Report: " + full);
+        }
+
+        if (invocation.Value("draft") is { } draftPath)
+        {
+            var draft = AuditProfileSynthesizer.Synthesize(report);
+            var diagnostics = PortableProfileValidator.Validate(draft.Profile).Select(FromProfileDiagnostic).ToList();
+            result.Diagnostics.AddRange(diagnostics);
+            var state = new ProfileWorkspaceState();
+            state.LoadProfile(draft.Profile);
+            var full = Path.GetFullPath(draftPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, state.ExportProfileText());
+            var notes = new JsonArray();
+            foreach (var note in draft.MappedNotes) notes.Add(note);
+            result.Data["draftProfile"] = full;
+            result.Data["draftNotes"] = notes;
+            result.Data["draftUnmapped"] = draft.UnmappedFindings.Count;
+            result.Lines.Add("Draft profile (untrusted — review and save it in the profile workspace before building): " + full);
+            foreach (var note in draft.MappedNotes) result.Lines.Add("Draft: " + note);
+            AddDiagnosticLines(result);
+            if (diagnostics.Any(d => d.Severity == "error"))
+            {
+                result.ExitCode = 3;
+                result.Error = "The synthesized draft profile has validation errors; fix them in the profile workspace before building.";
+            }
+        }
         return result;
     }
 

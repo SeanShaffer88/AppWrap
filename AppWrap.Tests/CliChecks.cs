@@ -152,5 +152,23 @@ internal static class CliChecks
         var dryBad = await CommandRouter.ExecuteAsync(
             CliArguments.Parse(["build", "--source", source, "--version", "1.x", "--output", outputFile, "--dry-run"]), environment, CancellationToken.None);
         check("cli dry-run invalid input is validation failure", dryBad.ExitCode == 3 && !File.Exists(outputFile));
+
+        // --- Audit ------------------------------------------------------------
+        check("cli parse audit command", CliArguments.Parse(["audit", "setup.msi"]).CommandKey == "audit");
+        var auditSource = Path.Combine(evidence, "audit-source");
+        Directory.CreateDirectory(auditSource);
+        File.WriteAllBytes(Path.Combine(auditSource, "CliApp.exe"), [0x4D, 0x5A]);
+        File.WriteAllText(Path.Combine(auditSource, "settings.ini"), "[app]\n");
+        var auditZip = Path.Combine(evidence, "audit-sample.zip");
+        System.IO.Compression.ZipFile.CreateFromDirectory(auditSource, auditZip);
+        var draftPath = Path.Combine(evidence, "audit-draft.json");
+        var audit = await CommandRouter.ExecuteAsync(
+            CliArguments.Parse(["audit", auditZip, "--draft", draftPath, "--json"]), environment, CancellationToken.None);
+        check("cli audit zip succeeds with draft", audit.ExitCode == 0 && File.Exists(draftPath)
+            && audit.Data!["payloadFolder"] is not null && audit.Data["draftProfile"]!.GetValue<string>() == Path.GetFullPath(draftPath));
+        var draftValidate = await CommandRouter.ExecuteAsync(CliArguments.Parse(["profile", "validate", draftPath]), environment, CancellationToken.None);
+        check("cli audit draft validates as a profile", draftValidate.ExitCode == 0);
+        var auditBad = await CommandRouter.ExecuteAsync(CliArguments.Parse(["audit", Path.Combine(evidence, "missing.zip")]), environment, CancellationToken.None);
+        check("cli audit missing source is validation failure", auditBad.ExitCode == 3);
     }
 }
