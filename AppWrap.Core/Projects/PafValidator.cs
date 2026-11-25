@@ -26,7 +26,13 @@ public static class PafValidator
     private static readonly string[] Categories =
         ["Accessibility", "Development", "Education", "Games", "Graphics & Pictures", "Internet", "Music & Video", "Office", "Security", "Utilities"];
 
-    public static IReadOnlyList<PafDiagnostic> Validate(string root, PafProject? project = null)
+    /// <param name="inMemoryDocuments">
+    /// Optional overlay of document texts (project-relative display path → text)
+    /// that take precedence over the files on disk. The Phase 2 configuration
+    /// editors pass their unsaved documents here so inline validation applies
+    /// exactly these rules to exactly what will be saved; no rule changes.
+    /// </param>
+    public static IReadOnlyList<PafDiagnostic> Validate(string root, PafProject? project = null, IReadOnlyDictionary<string, string>? inMemoryDocuments = null)
     {
         var fullRoot = Path.GetFullPath(root);
         InputRules.SafePath(fullRoot);
@@ -49,8 +55,9 @@ public static class PafValidator
 
         // --- appinfo.ini ------------------------------------------------------
         string? appId = null;
-        var appInfo = ReadIni(fullRoot, PafLayout.AppInfoPath, diagnostics);
-        if (appInfo is null && !File.Exists(Path.Combine(fullRoot, "App", "AppInfo", "appinfo.ini")))
+        var appInfo = ReadIni(fullRoot, PafLayout.AppInfoPath, diagnostics, inMemoryDocuments);
+        if (appInfo is null && !File.Exists(Path.Combine(fullRoot, "App", "AppInfo", "appinfo.ini"))
+            && !(inMemoryDocuments?.ContainsKey(PafLayout.AppInfoPath) ?? false))
             Add(PafDiagnosticSeverity.Warning, "MissingAppInfo", PafLayout.AppInfoPath, null, null,
                 "The project has no appinfo.ini.", "AppWrap generates appinfo.ini from the wizard answers when packaging; add one to control the package metadata directly.");
         if (appInfo is not null)
@@ -136,26 +143,34 @@ public static class PafValidator
         }
 
         // --- installer.ini ----------------------------------------------------
-        var installer = ReadIni(fullRoot, PafLayout.InstallerIniPath, diagnostics);
+        var installer = ReadIni(fullRoot, PafLayout.InstallerIniPath, diagnostics, inMemoryDocuments);
         if (installer is not null && installer.GetValue("CheckRunning", "CloseEXE") is not null)
             Add(PafDiagnosticSeverity.Info, "GuardOwnedInstallerKey", PafLayout.InstallerIniPath, "CheckRunning", "CloseEXE",
                 "installer.ini sets [CheckRunning] CloseEXE.", "AppWrap's upgrade guard owns this setting in generated packages; the generated value wins at build time.");
 
         // --- Launcher ---------------------------------------------------------
         var launcherDir = Path.Combine(fullRoot, "App", "AppInfo", "Launcher");
-        if (!Directory.Exists(launcherDir))
+        var launcherDisplays = new List<string>();
+        if (Directory.Exists(launcherDir))
+            launcherDisplays.AddRange(Directory.EnumerateFiles(launcherDir, "*.ini").Take(16)
+                .Select(f => PafLayout.ToDisplayPath(Path.GetRelativePath(fullRoot, f))));
+        if (inMemoryDocuments is not null)
+            foreach (var key in inMemoryDocuments.Keys)
+                if (key.StartsWith(PafLayout.LauncherDirectory + "/", StringComparison.OrdinalIgnoreCase)
+                    && key.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)
+                    && !launcherDisplays.Contains(key, StringComparer.OrdinalIgnoreCase))
+                    launcherDisplays.Add(key);
+        if (!Directory.Exists(launcherDir) && launcherDisplays.Count == 0)
             Add(PafDiagnosticSeverity.Info, "NoLauncherConfig", PafLayout.LauncherDirectory, null, null,
                 "The project has no launcher configuration.", "AppWrap generates launcher configuration from the portable profile when packaging; add App/AppInfo/Launcher/<AppID>.ini to control it directly.");
         else
         {
-            var launcherFiles = Directory.EnumerateFiles(launcherDir, "*.ini").Take(16).ToList();
-            if (launcherFiles.Count == 0)
+            if (launcherDisplays.Count == 0)
                 Add(PafDiagnosticSeverity.Warning, "EmptyLauncherDirectory", PafLayout.LauncherDirectory, null, null,
                     "The Launcher folder contains no launcher INI.", "Add <AppID>.ini with a [Launch] section, or remove the empty folder.");
-            foreach (var file in launcherFiles)
+            foreach (var display in launcherDisplays)
             {
-                var display = PafLayout.ToDisplayPath(Path.GetRelativePath(fullRoot, file));
-                var launcher = ReadIni(fullRoot, display, diagnostics);
+                var launcher = ReadIni(fullRoot, display, diagnostics, inMemoryDocuments);
                 if (launcher is null) continue;
                 if (string.IsNullOrWhiteSpace(launcher.GetValue("Launch", "ProgramExecutable")))
                     Add(PafDiagnosticSeverity.Error, "MissingProgramExecutable", display, "Launch", "ProgramExecutable",
@@ -165,8 +180,8 @@ public static class PafValidator
                     Add(PafDiagnosticSeverity.Warning, "InvalidWaitForProgram", display, "Launch", "WaitForProgram",
                         $"WaitForProgram is '{wait}'; the launcher expects true or false.", "Set [Launch] WaitForProgram to true or false.");
             }
-            if (appId is not null && launcherFiles.Count != 0 &&
-                !launcherFiles.Any(f => string.Equals(Path.GetFileName(f), appId + ".ini", StringComparison.OrdinalIgnoreCase)))
+            if (appId is not null && launcherDisplays.Count != 0 &&
+                !launcherDisplays.Any(f => string.Equals(Path.GetFileName(f), appId + ".ini", StringComparison.OrdinalIgnoreCase)))
                 Add(PafDiagnosticSeverity.Warning, "MissingLauncherIni", PafLayout.LauncherDirectory, null, null,
                     $"No launcher INI is named after the AppID ({appId}.ini).", $"Rename the launcher INI to {appId}.ini so the compiled launcher reads it.");
         }
@@ -199,10 +214,25 @@ public static class PafValidator
     /// <summary>
     /// Reads and parses one INI file with the build layer's own size bound (64 KB,
     /// matching PortableBuild's appinfo guard). Returns null when the file is absent,
-    /// oversized, or unparsable — each case is reported as a diagnostic first.
+    /// oversized, or unparsable — each case is reported as a diagnostic first. An
+    /// in-memory overlay text for the path takes precedence over the file on disk.
     /// </summary>
-    private static IniDocument? ReadIni(string fullRoot, string displayPath, List<PafDiagnostic> diagnostics)
+    private static IniDocument? ReadIni(string fullRoot, string displayPath, List<PafDiagnostic> diagnostics, IReadOnlyDictionary<string, string>? inMemoryDocuments = null)
     {
+        if (inMemoryDocuments is not null && inMemoryDocuments.TryGetValue(displayPath, out var overlay))
+        {
+            if (System.Text.Encoding.UTF8.GetByteCount(overlay) > 65536)
+            {
+                diagnostics.Add(new PafDiagnostic(PafDiagnosticSeverity.Error, "IniTooLarge", displayPath, null, null,
+                    $"{displayPath} is larger than 64 KB.", "Reduce the file below 64 KB; the packaging toolchain refuses larger metadata files."));
+                return null;
+            }
+            var overlaid = IniDocument.Parse(overlay);
+            foreach (var issue in overlaid.ParseIssues)
+                diagnostics.Add(new PafDiagnostic(PafDiagnosticSeverity.Error, "IniParseIssue", displayPath, null, null,
+                    $"{displayPath} line {issue.Line}: {issue.Message}", "Fix the line so it is a [section] header, a key=value entry, a comment, or a blank line."));
+            return overlaid;
+        }
         var path = Path.Combine(fullRoot, displayPath.Replace('/', Path.DirectorySeparatorChar));
         if (!File.Exists(path)) return null;
         if (new FileInfo(path).Length > 65536)

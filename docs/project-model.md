@@ -109,11 +109,73 @@ AppWrap's own generators. The toolchain won in three places:
 
 `App/AppInfo/appinfo.ini`, `App/`, `Data/`, and `Other/` matched the brief as-is.
 
+## Phase 2 — configuration editors and Advanced mode
+
+Phase 2 surfaces this model in the wizard. Implementation:
+`AppWrap.Core/Projects/ProjectConfigWorkspace.cs` (testable editor state) and
+`AppWrap.Gui/MainWindow.ProjectConfig.cs` (the panel, reached from the first
+wizard step once a folder's project is loaded).
+
+### Editors and the binding model
+
+The panel has four tabs: **App info** (`App/AppInfo/appinfo.ini`), **Launcher**
+(`App/AppInfo/Launcher/<AppID>.ini`), **Installer** (`App/AppInfo/installer.ini`)
+and **Custom code**. Each INI tab offers guided fields for the keys AppWrap
+itself emits and validates, plus the document's full text. The files on disk,
+parsed through the lossless `IniDocument`, are the single source of truth:
+field edits and text edits mutate the same parsed document, so unknown
+sections, unknown keys, comments and ordering survive every edit, and saving
+writes the changed documents back, refreshes the source snapshot and persists
+the project file. A document that was never edited and does not exist is not
+created — AppWrap still generates it during packaging.
+
+Field coverage is grounded in the real formats, not the brief's examples:
+appinfo fields follow `PortableAppsGenerator`'s emitted document plus the
+metadata surface `PafValidator`/`InstallerRules` model (`[Format]`, `[Details]`,
+`[License]` as a section of true/false keys, `[Version]`, `[Control]`,
+`[Dependencies]`, `[SpecialPaths]`); launcher fields follow the pinned PAL
+2.2.9 catalogue (`[Launch]`, `[Activate]`, `[Language]`, and `[LiveMode]`
+`CopyApp` — the pinned `RunLocally` segment reads it, while `CopyData` was
+removed by PAL 2.2.9 and is deliberately not offered); installer fields are the
+scalar keys of `InstallerRules` (`[Source]`, `[CheckRunning]`,
+`[MainDirectories]`, `[OptionalComponents]`, `[Languages] ENGLISH`). The
+numbered preserve/remove and optional-payload lists have no scalar fields and
+stay editable through the document text view. Fields the validator treats as
+errors when missing (appinfo `Name`, `AppID`, `PackageVersion`, `Start`;
+launcher `ProgramExecutable`) carry a required marker.
+
+### Validation
+
+A **Validate all** action — and every save — runs `PafValidator` across the
+whole project. The validator's rules are unchanged; the workspace passes its
+in-memory documents as an overlay, so unsaved edits are validated by exactly
+the rules the saved project will face, and each diagnostic is shown next to
+the field it belongs to (matched by file, section and key) as well as in the
+panel's diagnostics list. Diagnostics never block navigation; packaging keeps
+its own existing gates.
+
+### Advanced mode
+
+Advanced mode is a per-project switch, **off by default** (including for
+inferred projects), persisted in the project file's `userChoices` as
+`advancedMode`, and shown with a warning about what it enables. It unlocks
+direct text editing of the two custom-code files inside the project —
+`App/AppInfo/Launcher/Custom.nsh` and
+`Other/Source/PortableApps.comInstallerCustom.nsh`. With it off, those files
+are read-only in the panel and a programmatic write is refused as a typed
+result (`CustomCodeWriteStatus.RefusedAdvancedModeOff`), leaving the file
+untouched.
+
+Advanced mode changes **no packaging behaviour**. Editing custom code is a
+project-file edit only: packaging still rejects source-supplied build scripts
+in a payload (the validator's `SourceInstallerHook` warning says so for the
+installer hook), still never compiles source-supplied launcher code, and the
+generated installer still uses only AppWrap's own first-party hook.
+
 ## What Phase 1 deliberately does not do
 
-- No editors: Phase 2 builds the guided INI editors and Advanced mode on top of
-  this model. The validator runs from tests and the model API today; surfacing its
-  diagnostics in the wizard UI arrives with the Phase 2 editors.
+- Editors and Advanced mode were Phase 2 work; they are described above. In
+  Phase 1 the validator ran from tests and the model API only.
 - No new build outputs: Phase 3 adds the "PAF Package" option. The project model
   does not change any existing Installer / Portable / Both behaviour.
 - The snapshot hash is a change-detection aid recorded in the project file; it is

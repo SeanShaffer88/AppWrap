@@ -105,12 +105,19 @@ public partial class MainWindow : Window
         var panel = Panel();
         if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
+        if (configOpen && configWorkspace is not null) { RenderProjectConfig(panel); return; }
         switch (step)
         {
             case 0:
                 Question.Text = "Where is your application?";
                 Hint.Text = !UsesPortable ? "Choose the folder that contains your app and the files it needs." : "Choose an app that is already portable. Packaging cannot move its settings or remove its dependencies.";
                 SelectFile(panel, "Application folder", "SourceFolder", source, BrowseSource);
+                if (loadedProject is not null)
+                {
+                    var configButton = Identify(new Button { Content = "Project configuration…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "ProjectConfigOpen");
+                    configButton.Click += (_, _) => OpenProjectConfig();
+                    panel.Children.Add(configButton);
+                }
                 break;
             case 1:
                 Question.Text = "What is your app called?"; Hint.Text = "Use the name and version people should see when they install it.";
