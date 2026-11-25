@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
@@ -103,5 +104,34 @@ public static class ImageAssets
         var source = Fit(Load(sourcePath), 164, 314, crop: true);
         var frame = new FormatConvertedBitmap(source, PixelFormats.Bgr24, null, 0);
         var encoder = new BmpBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(frame)); using var file = File.Create(outputPath); encoder.Save(file);
+    }
+
+    /// <summary>
+    /// Composites the standard branding splash (the installer branding
+    /// bitmap, 164x314 — see AppWrap.Core.Pipeline.SplashSpec) from the
+    /// wrapped app's icon and name: the icon large on the PortableApps
+    /// dark-red gradient, the app name beneath it. Used when a package
+    /// supplies no sidebar image of its own, so the branding slot is
+    /// never left to the backend's stock art.
+    /// </summary>
+    public static void WriteSplash(string? iconSourcePath, string appName, string outputPath)
+    {
+        var source = iconSourcePath == null ? DefaultIcon() : Load(iconSourcePath);
+        var visual = new DrawingVisual();
+        using (var context = visual.RenderOpen())
+        {
+            var background = new LinearGradientBrush(Color.FromRgb(38, 38, 38), Color.FromRgb(112, 10, 22), 90.0);
+            context.DrawRectangle(background, null, new Rect(0, 0, 164, 314));
+            context.DrawImage(Fit(source, 128, 128), new Rect(18, 24, 128, 128));
+            var text = new FormattedText(appName, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"), 15, Brushes.White, 96)
+            { MaxTextWidth = 148, MaxTextHeight = 120, TextAlignment = TextAlignment.Center };
+            context.DrawText(text, new Point(8, 168));
+        }
+        var bitmap = new RenderTargetBitmap(164, 314, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual); bitmap.Freeze();
+        var frame = new FormatConvertedBitmap(bitmap, PixelFormats.Bgr24, null, 0);
+        var encoder = new BmpBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(frame));
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        using var file = File.Create(outputPath); encoder.Save(file);
     }
 }

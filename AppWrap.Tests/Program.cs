@@ -156,6 +156,7 @@ internal static class Program
         await BatchChecks.Run(root, evidence, input, service, args.Length > 1 ? args[1] : null, Check);
         TestHarnessChecks.Run(root, evidence, Check, Reject);
         AuditChecks.Run(evidence, Check, Reject);
+        await PipelineChecks.RunAsync(evidence, Check, Reject);
         await TestHarnessAsyncChecks.RunAsync(evidence, Check);
         await PafPackageChecks.RunAsync(root, evidence, input, Check, Reject);
         ComplianceChecks.Run(input, Check);

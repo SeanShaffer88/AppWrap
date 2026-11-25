@@ -39,7 +39,10 @@ public sealed record DetectedWrite(WatchedRootKind Root, string Path, WriteChang
 /// additive within schema 1: registryObserved says whether a registry
 /// provider took part, registryChanges lists the detected registry changes
 /// and registryViolations the subset that are portability violations (they
-/// also fail the verdict — see WriteClassifier).
+/// also fail the verdict — see WriteClassifier). Observation-backend is
+/// likewise additive: "host" for the ordinary redirected-profile run,
+/// "sandboxie" when the app ran inside a Sandboxie box (stage 4 leak
+/// verification), where the verdict means zero writes escaped the box.
 /// </summary>
 public sealed record TestReport(
     int SchemaVersion,
@@ -55,7 +58,8 @@ public sealed record TestReport(
     TestVerdict Verdict,
     bool RegistryObserved = false,
     IReadOnlyList<DetectedRegistryChange>? RegistryChanges = null,
-    IReadOnlyList<DetectedRegistryChange>? RegistryViolations = null)
+    IReadOnlyList<DetectedRegistryChange>? RegistryViolations = null,
+    string? ObservationBackend = null)
 {
     /// <summary>Detected registry changes, or an empty list when the registry was not observed.</summary>
     public IReadOnlyList<DetectedRegistryChange> RegistryChangeList => RegistryChanges ?? [];

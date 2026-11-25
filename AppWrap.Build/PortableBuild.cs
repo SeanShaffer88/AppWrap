@@ -19,7 +19,11 @@ internal static class PortableBuild
     {
         var package = await StagePackageAsync(input, payload, stage, baseDirectory, token, pafPackage: false, compileLauncher: true).ConfigureAwait(false);
         var backend = Path.Combine(stage, "builder");
+        // Branding splash for the packaging builder: the project's own
+        // sidebar image when one was supplied, otherwise a splash
+        // composited from the wrapped app's icon and name (SplashSpec).
         if (input.SidebarImagePath != null) ImageAssets.WriteSidebar(input.SidebarImagePath, Path.Combine(backend, "App", "installer", "PortableApps.comInstaller.bmp"));
+        else ImageAssets.WriteSplash(input.LauncherIconPath, input.AppName, Path.Combine(backend, "App", "installer", "PortableApps.comInstaller.bmp"));
         var result = await ProcessRunner.RunAsync(Path.Combine(backend, "AppWrapPackagingBuilder.exe"), [package], backend, token).ConfigureAwait(false);
         var logPath = Path.Combine(backend, "Data", "PortableApps.comInstallerLog.txt");
         var log = await BackendLog.ReadAsync(logPath, token).ConfigureAwait(false);

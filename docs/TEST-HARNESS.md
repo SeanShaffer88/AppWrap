@@ -62,6 +62,23 @@ a compiled launcher; a folder the official PortableApps.com Installer has not
 built yet (and that carries no launcher of its own) is refused with that
 explanation before anything is launched.
 
+## Sandboxie mode (pipeline stage 4)
+
+With `test --sandboxie` (or the Sandboxie provider passed to the
+harness), the packaged app instead runs inside a dedicated Sandboxie
+box (`AppWrapLeakTest`) whose file root sits inside the harness's
+throwaway tree. The watched roots are then all *outside* the box, so
+the verdict's meaning sharpens: **a Pass certifies that zero writes
+escaped the box** — any file observed in the package copy, the profile
+or temp is by definition an escape and a violation. The report records
+which backend observed in `observationBackend` (`sandboxie`, or
+`host` for the default mode). The mode requires Sandboxie-Plus
+(AppWrap Setup bootstraps it; `docs/PIPELINE.md`); without it the CLI
+refuses with a plain explanation instead of silently testing on the
+host. Sandboxie mode and registry observation are alternatives: the
+box isolates the registry too, so a `--sandboxie` run does not also
+snapshot the host registry.
+
 ## Classification and verdict
 
 | Where the change landed | Category | Violation |
@@ -98,6 +115,7 @@ JSON with camelCase fields; enum values are strings.
 | `registryObserved` | Whether a registry provider took part in this run |
 | `registryChanges` | Detected registry changes: `keyPath`, `valueName`, `change` (`KeyCreated` / `KeyDeleted` / `ValueCreated` / `ValueModified` / `ValueDeleted`), `category` (`LauncherBackup` / `HostLeakage` / `MachineWide`), `violation`, `newData`, `valueKind` |
 | `registryViolations` | The subset of `registryChanges` with `violation: true` |
+| `observationBackend` | Which observation backend ran: `host` (default) or `sandboxie` (the app ran in a Sandboxie box; watched roots outside the box, so any detected write is an escape) |
 | `verdict` | `Pass` or `Fail` |
 
 Paths in the report are relative to their watched root so the report stays

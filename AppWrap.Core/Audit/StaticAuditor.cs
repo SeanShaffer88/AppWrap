@@ -8,8 +8,10 @@ namespace AppWrap.Core.Audit;
 /// source — a portable .zip, an .msi, an installer .exe, or an already
 /// extracted folder — and reports where the app keeps data and what it
 /// writes, without executing anything. Executables are identified by
-/// signature only; unpacking an installer family AppWrap has no sanctioned
-/// unpacker for is recorded as an explicit <see cref="AuditFindingKind.StaticAuditLimited"/>
+/// signature; the engine-backed overloads (StaticAuditor.Engines.cs)
+/// additionally unpack installer payloads with the pipeline's prepared
+/// extraction engines. A family no prepared engine covers is recorded
+/// as an explicit <see cref="AuditFindingKind.StaticAuditLimited"/>
 /// finding, never guessed around.
 /// </summary>
 public static partial class StaticAuditor
@@ -271,10 +273,11 @@ public static partial class StaticAuditor
     }
 
     /// <summary>
-    /// Audits an installer .exe. AppWrap has no sanctioned silent unpacker for
-    /// NSIS/Inno/MSI-wrapper payloads in its backends, so the static audit
-    /// identifies the family and records the limit explicitly; the runtime
-    /// audit is the pass that observes what such an installer actually does.
+    /// Audits an installer .exe without engines: identifies the family
+    /// and records the limit explicitly; the engine-backed overload
+    /// (AuditExeWithEnginesAsync) unpacks the payload when a prepared
+    /// engine fits, and the runtime audit observes what such an
+    /// installer actually does.
     /// </summary>
     public static AuditReport AuditExe(string exePath)
     {
