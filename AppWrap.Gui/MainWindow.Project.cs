@@ -15,9 +15,9 @@ public partial class MainWindow
     private sealed record LoadedProject(PafProject Project, bool Inferred);
     private LoadedProject? loadedProject;
 
-    private static LoadedProject LoadProject(string folder)
+    private static LoadedProject LoadProject(string folder, string? template = null)
     {
-        var project = ProjectStore.LoadOrInfer(folder, out var inferred);
+        var project = ProjectStore.LoadOrInfer(folder, out var inferred, template);
         return new LoadedProject(project, inferred);
     }
 

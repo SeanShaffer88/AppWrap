@@ -48,12 +48,19 @@ public static class ProjectStore
     /// the caller can persist it on first save. Backwards compatibility: folders that
     /// predate project files keep working unchanged.
     /// </summary>
-    public static PafProject LoadOrInfer(string root, out bool inferred)
+    /// <param name="template">
+    /// Optional template name (see <see cref="ProjectScaffolder.TemplateChoiceKey"/>)
+    /// recorded in the user choices of a newly inferred project — this is how the
+    /// Phase 5 "Wrapped binary" template, which is this inference path, records its
+    /// origin. An existing project file is never rewritten by it: the template a
+    /// project was created from is a fact about its creation, not a setting.
+    /// </param>
+    public static PafProject LoadOrInfer(string root, out bool inferred, string? template = null)
     {
         var existing = Load(root);
         if (existing is not null) { inferred = false; return existing; }
         inferred = true;
-        return Infer(root);
+        return Infer(root, template);
     }
 
     /// <summary>
@@ -62,7 +69,7 @@ public static class ProjectStore
     /// [Details] Name and [Format] Version), otherwise from the folder name and the
     /// toolchain default. A fresh source snapshot is taken when the tree is in bounds.
     /// </summary>
-    public static PafProject Infer(string root, CancellationToken token = default)
+    public static PafProject Infer(string root, string? template = null, CancellationToken token = default)
     {
         var fullRoot = Path.GetFullPath(root);
         InputRules.SafePath(fullRoot);
@@ -79,7 +86,7 @@ public static class ProjectStore
             if (!string.IsNullOrWhiteSpace(existingSpec)) spec = existingSpec.Trim();
         }
         var snapshot = SourceSnapshot.Compute(fullRoot, token);
-        return new PafProject
+        var project = new PafProject
         {
             Name = name,
             PafSpecVersion = spec,
@@ -87,6 +94,8 @@ public static class ProjectStore
             SourceSnapshotHash = snapshot.Sha256,
             SourceSnapshotTruncated = snapshot.Truncated,
         };
+        if (template is not null) project.UserChoices[ProjectScaffolder.TemplateChoiceKey] = template;
+        return project;
     }
 
     /// <summary>

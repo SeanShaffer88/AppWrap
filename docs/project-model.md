@@ -172,6 +172,62 @@ in a payload (the validator's `SourceInstallerHook` warning says so for the
 installer hook), still never compiles source-supplied launcher code, and the
 generated installer still uses only AppWrap's own first-party hook.
 
+## Phase 5 — New Project from Template
+
+The wizard's first page offers **New project from template…**, with two
+templates:
+
+- **Blank PAF app** — `ProjectScaffolder.CreateBlank` scaffolds a minimal,
+  valid PortableApps.com Format skeleton into a folder that must be new or
+  empty (a non-empty destination is refused, never merged into). The tree is
+  staged in a sibling `.appwrap-scaffold-*.tmp` folder and moved into place
+  only when complete, so a failed scaffold leaves nothing behind. It writes
+  the canonical layout (`App/AppInfo/` with `appinfo.ini` and
+  `installer.ini`, `App/AppInfo/Launcher/<AppID>.ini`, `Data/`, `Other/`)
+  plus an `appwrap.project.json` recording the template origin (user choice
+  `template` = `BlankPafApp`), the targeted PAF spec version (3.9 by
+  default; another version can be chosen at scaffold time and is recorded,
+  with the validator flagging the mismatch against the toolchain), and the
+  Advanced mode choice. No build is run.
+- **Wrapped binary** — the pre-existing wrap-a-folder flow, listed in the
+  picker for consistency. It has no separate implementation: choosing it
+  routes to the usual source-folder selection, and the project inferred from
+  that folder records `template` = `WrappedBinary`. The recording happens
+  only at inference — reopening a project never rewrites the template it was
+  created from, and folders chosen outside the template flow record nothing.
+
+### Placeholders and TODO diagnostics
+
+A blank scaffold must be valid immediately, so required fields carry valid
+placeholder values: the AppID is derived from the app name by the generator's
+convention (letters and digits, ending in `Portable`), `PackageVersion` is
+`1.0.0.0`, `[Control] Start` is `<AppID>.exe`, the category is `Utilities`.
+Values that still need the author — publisher, homepage, description,
+display version, and the launcher's `ProgramExecutable` (`TODO.exe`) —
+contain a `TODO` marker. Phase 5 adds one additive validator rule,
+`TodoPlaceholder`: any INI entry value containing `TODO` is reported as a
+**warning** naming the file, section and key, with a hint to replace it
+before publishing. The rule changes no existing severity, and a fresh blank
+scaffold validates with zero errors and only these TODO warnings (plus any
+info the chosen options imply). Scaffolded projects open in the Phase 2
+configuration editors directly — the wizard loads the created project and
+the panel is one click from the first page.
+
+### Custom-code starters and Advanced mode
+
+No `Custom.nsh` or installer custom code is scaffolded unless the new
+project's Advanced mode is on (chosen in the template panel, recorded in the
+project file, off by default). With it on, both starters are written as
+comment-only, inert files whose headers document how each is consumed —
+honestly, including the asymmetry: the launcher's `Custom.nsh` *is* included
+by the PortableApps.com Launcher when a launcher for the project is compiled
+from a portable profile, while a source-supplied
+`Other/Source/PortableApps.comInstallerCustom.nsh` is *not* consumed by
+AppWrap packaging (payloads containing one are rejected, and generated
+packages carry AppWrap's own guard hook at that path), so the installer
+starter is for use with the official installer and the validator's
+`SourceInstallerHook` warning applies to it as to any source hook.
+
 ## What Phase 1 deliberately does not do
 
 - Editors and Advanced mode were Phase 2 work; they are described above. In

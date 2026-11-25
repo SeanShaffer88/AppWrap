@@ -58,6 +58,7 @@ internal static class Program
         NamingChecks.Run(Check, Reject);
         ProjectChecks.Run(evidence, Check, Reject);
         ProjectConfigChecks.Run(evidence, Check, Reject);
+        ScaffoldChecks.Run(evidence, Check, Reject);
         ProfileChecks.Run(Check, Reject);
         await PalChecks.RunAsync(root, evidence, input, Check, Reject);
         await BundleChecks.RunAsync(evidence, Check);
