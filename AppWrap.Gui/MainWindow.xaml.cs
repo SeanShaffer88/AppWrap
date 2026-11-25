@@ -108,7 +108,7 @@ public partial class MainWindow : Window
         BackButton.Visibility = step > 0 && !busy && !finished ? Visibility.Visible : Visibility.Collapsed;
         NextButton.Visibility = busy || finished ? Visibility.Collapsed : Visibility.Visible;
         NextButton.Content = step == TotalSteps - 1 ? IsBoth ? "Build both" : "Build" : "Next";
-        CancelButton.Content = finished ? "Close" : busy ? "Cancel build" : "Cancel";
+        CancelButton.Content = finished ? "Close" : busy ? "Cancel build" : "Exit";
         StepLabel.Text = finished ? "READY TO SHARE" : busy ? "BUILDING YOUR PACKAGE" : $"STEP {step + 1} OF {TotalSteps}";
         StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", var s when UsesPortable && s == BehaviorStep => "Portable behavior", var s when s == ShortcutsStep => "Shortcuts", var s when UsesStandard && s == FinishStep => "Finish options", var s when UsesPortable && s == IconStep => "App icon", var s when UsesPortable && !IsPaf && s == IconStep + 1 => "Sidebar image", _ => "Save & build" };
         var workspaceActive = UsesPortable && step == BehaviorStep && configurePortable && !busy && !finished;

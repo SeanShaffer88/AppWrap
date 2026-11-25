@@ -58,9 +58,9 @@ public partial class MainWindow
             var choose = SmallButton("Choose application folder…", "TemplateChooseFolder");
             choose.Click += (_, _) => { pendingTemplate = ProjectScaffolder.WrappedBinaryTemplateName; templateOpen = false; BrowseSource(); };
             bar.Children.Add(choose);
-            var done = SmallButton("Done", "TemplateDone");
-            done.Click += (_, _) => { templateOpen = false; Render(); };
-            bar.Children.Add(done);
+            var backFromTemplate = SmallButton("Back", "TemplateBack");
+            backFromTemplate.Click += (_, _) => { templateOpen = false; Render(); };
+            bar.Children.Add(backFromTemplate);
             panel.Children.Add(bar);
             return;
         }
@@ -114,7 +114,7 @@ public partial class MainWindow
         var create = SmallButton("Create project", "TemplateCreate");
         create.Click += (_, _) => CreateBlankProject();
         actions.Children.Add(create);
-        var back = SmallButton("Done", "TemplateDone");
+        var back = SmallButton("Back", "TemplateBack");
         back.Click += (_, _) => { templateOpen = false; Render(); };
         actions.Children.Add(back);
         panel.Children.Add(actions);

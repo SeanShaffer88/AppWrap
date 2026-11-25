@@ -16,7 +16,7 @@ Mockup: `C:\Users\Sean Shaffer\Documents\Codex\2026-11-21\c\outputs\AppWrap-opti
 | Developer website | Absent for standard; portable metadata may preserve source homepage | Optional standard creator URL + offer toggle, default off; valid URL required only when offered |
 | Icon/sidebar | Portable optional pictures with defaults | Keep explicitly optional; do not add standard appearance controls to this bounded change |
 | Output/naming/custom filename | Existing presets and single Save dialog/Both folder previews | Keep all options; preserve collision-consent invalidation |
-| Appearance/window placement | Five themes plus persisted window state | Keep compact Appearance beside Cancel; no footer growth |
+| Appearance/window placement | Five themes plus persisted window state | Keep compact Appearance beside Exit; no footer growth |
 | Install scope/path | Per-user no elevation, stable app identity/path | Keep safe default; not an arbitrary install-script editor |
 | Close/upgrade/data/output rollback | Safety contracts and tested behavior | Keep mandatory safeguards, not user-disable switches |
 | Compression/signing/runtime architecture/backend versions | Fixed implementation/pinned toolchain | Do not expose raw backend controls; signing not implemented and cannot be advertised |
