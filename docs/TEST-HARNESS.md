@@ -30,6 +30,18 @@ a build run one. Testing needs no administrator rights.
    launch and again after the process exits. The diff is the detected writes.
    Snapshot diffing was chosen over a file-system watcher for determinism:
    the same run always produces the same report.
+4b. **Watch the registry.** When a registry provider takes part (the
+   wizard's Test panel always passes one; the CLI's `test --registry`
+   opts in), the `HKCU\Software` and `HKLM\Software` roots are snapshotted
+   (keys and values, read-only through advapi32) before launch and after
+   exit, and the diff joins the report as `registryChanges`. The registry
+   cannot be redirected into the sandbox the way the profile folders are —
+   it is the host's real registry — which is precisely why a write there
+   is meaningful evidence: PAL's own backup area
+   (`HKCU\Software\PortableApps.com\…`) is noted, any other HKCU write is
+   **host leakage**, and an HKLM write is **machine-wide**; both are
+   violations and fail the verdict. The conversion audit's runtime pass
+   (`docs/AUDIT.md`) reuses this same observation around a vendor install.
 5. **Classify and report.** Each detected change is classified (below), a
    verdict is computed, and `test-report.json` is written outside the sandbox
    (from the wizard: under AppWrap's `Data/TestReports` state folder). The
@@ -64,7 +76,8 @@ falls into one row and nothing outside them can be observed at all.
 
 **Verdict is Pass only when** the app exited on its own with exit code 0,
 the run did not time out, and no violation was detected. A crash (non-zero
-exit), a killed process, or any profile leakage is a Fail.
+exit), a killed process, any profile leakage, or — when the registry was
+observed — any registry violation is a Fail.
 
 ## `test-report.json` schema (version 1)
 
@@ -82,6 +95,9 @@ JSON with camelCase fields; enum values are strings.
 | `timedOut` | Whether the run hit the time limit |
 | `detectedWrites` | All detected changes: `root` (`Package` / `Profile` / `Temp`), `path` (relative to that root, forward slashes), `change` (`Created` / `Modified` / `Deleted`), `category`, `violation` |
 | `violations` | The subset of `detectedWrites` with `violation: true` |
+| `registryObserved` | Whether a registry provider took part in this run |
+| `registryChanges` | Detected registry changes: `keyPath`, `valueName`, `change` (`KeyCreated` / `KeyDeleted` / `ValueCreated` / `ValueModified` / `ValueDeleted`), `category` (`LauncherBackup` / `HostLeakage` / `MachineWide`), `violation`, `newData`, `valueKind` |
+| `registryViolations` | The subset of `registryChanges` with `violation: true` |
 | `verdict` | `Pass` or `Fail` |
 
 Paths in the report are relative to their watched root so the report stays
@@ -96,11 +112,16 @@ meaningful after the sandbox it describes has been deleted.
   inherent race at the boundaries: a process that outlives the main process
   (a detached helper that keeps writing after the launcher exits) can write
   after the after-snapshot, or between exit and snapshot.
-- **The registry is not observed.** There is no registry virtualization and
-  no registry diffing. Profile *file* leakage is the coarse proxy: an app
-  that writes settings to `HKCU` but never touches the profile files will
-  pass the file checks while still not being fully portable. Treat a Pass as
-  "no file-system evidence against portability", not as proof.
+- **Registry observation is snapshot-based, like the file watching.**
+  There is no registry virtualization and no continuous monitoring: only
+  the net difference between the before/after snapshots of the
+  `HKCU\Software` and `HKLM\Software` roots is seen (a value written and
+  restored inside the run leaves no trace; writes under other roots are
+  not observed), and the observed registry is the host's real registry —
+  a test run's registry writes are real writes, which the report makes
+  visible but AppWrap does not roll back. Treat a Pass as "no file or
+  registry evidence against portability in the watched roots", not as
+  proof.
 - **Redirection is by environment variable.** Apps that resolve profile
   locations through the environment are redirected; an app that hard-codes
   absolute profile paths, or resolves them through APIs that ignore the

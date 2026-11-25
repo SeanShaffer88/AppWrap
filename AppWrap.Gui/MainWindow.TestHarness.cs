@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using AppWrap.Build;
+using AppWrap.Build.Audit;
 using AppWrap.Core;
 using AppWrap.Core.TestHarness;
 using Microsoft.Win32;
@@ -135,6 +136,13 @@ public partial class MainWindow
                 var writes = Identify(new TextBox { Text = string.Join("\n", lines), IsReadOnly = true, FontSize = 12, TextWrapping = TextWrapping.NoWrap, MaxHeight = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto }, "TestReportWrites");
                 panel.Children.Add(writes);
             }
+            if (report.RegistryObserved && report.RegistryChangeList.Count > 0)
+            {
+                var lines = report.RegistryChangeList.Select(c =>
+                    (c.Violation ? "VIOLATION · " : "") + $"Registry · {c.KeyPath} · {c.ValueName ?? "(key)"} · {c.Change} · {c.Category}");
+                var registryWrites = Identify(new TextBox { Text = string.Join("\n", lines), IsReadOnly = true, FontSize = 12, TextWrapping = TextWrapping.NoWrap, MaxHeight = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto }, "TestReportRegistry");
+                panel.Children.Add(registryWrites);
+            }
             if (testReportFile is not null)
             {
                 var path = new TextBlock { Text = "Full report: " + testReportFile, ToolTip = testReportFile, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) };
@@ -170,7 +178,10 @@ public partial class MainWindow
             var appName = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(Path.TrimEndingDirectorySeparator(testFolder)) : name.Trim();
             var request = new TestRunRequest(appName, testMode, testFolder, reportPath);
             var token = testCancellation.Token;
-            var result = await Task.Run(() => AppWrap.Build.TestHarness.RunAsync(request, token));
+            // Registry observation rides along with the file observation:
+            // the HKCU/HKLM Software roots are snapshotted before and after
+            // the same single launch, and registry violations fail the run.
+            var result = await Task.Run(() => AppWrap.Build.TestHarness.RunAsync(request, new ProcessTestRunner(), token, new WindowsRegistrySnapshotProvider(), null));
             testReport = result.Report;
             testReportFile = result.ReportPath;
             testNote = result.CleanupWarning;

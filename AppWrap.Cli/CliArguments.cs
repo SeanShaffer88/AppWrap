@@ -80,7 +80,7 @@ public sealed class CliInvocation
 /// </summary>
 public static class CliArguments
 {
-    private static readonly string[] Roots = ["build", "test", "gui", "project", "config", "profile"];
+    private static readonly string[] Roots = ["build", "test", "gui", "project", "config", "profile", "audit"];
     private static readonly string[] GlobalSwitches = ["json", "dry-run", "verbose", "help", "version"];
 
     private static CliOptionSpec Value(string name, string description) => new(name, true, description);
@@ -110,6 +110,7 @@ public static class CliArguments
                 Flag("startup", "Offer Start with Windows after install (default off)."),
                 Value("website", "Developer website offered after install (http/https URL)."),
                 Value("profile", "Portable profile file (.json as saved by the wizard, or a launcher .ini) for portable modes."),
+                Value("audit-draft", "A draft profile saved by 'audit --draft' (reviewed and re-saved in the profile workspace): used as the build's portable profile for portable modes. Equivalent to --profile; the two cannot be combined."),
                 Value("project", "appwrap.project.json (or its folder): supplies default name/filename style and records the build."),
                 Flag("overwrite", "Replace existing output files/folders (the wizard asks; the CLI requires this flag)."),
             ], 0, 0, ""),
@@ -154,7 +155,19 @@ public static class CliArguments
                 Value("launch", "Launch file at the package root (default: from the package's appinfo, else its sole root .exe)."),
                 Value("timeout", "Seconds before the tested app is closed (default: 60)."),
                 Value("report", "Report path (default: Data/TestReports/test-report-<timestamp>.json beside the CLI)."),
+                Flag("registry", "Also observe the registry (Windows only): snapshot the HKCU/HKLM Software roots before and after the run and report the diff; registry violations fail the verdict."),
             ], 1, 1, "<package-folder>"),
+        ["audit"] = new("audit",
+            "appwrap audit <source> [--runtime] [--draft <profile.json>] [--report <audit-report.json>]",
+            "Audit a setup .exe/.msi or portable .zip for conversion to a PortableApps.com package: where it stores data and which registry entries it creates.",
+            [
+                Flag("runtime", "Also run the runtime pass (Windows only): silently install into a scratch folder, launch the app once, and diff the registry. Explicit action only — never part of a build."),
+                Value("draft", "Also synthesize a DRAFT portable profile from the findings and save it as a wizard profile .json (untrusted until reviewed and saved in the profile workspace)."),
+                Value("report", "Write the audit report JSON to this path (default: print findings only)."),
+                Value("launch", "For --runtime: the installed app's launch file, relative to the install folder (default: the inventoried main .exe)."),
+                Value("silent-args", "For --runtime with an .exe: the installer's silent arguments as one string, when AppWrap does not know its family's switches."),
+                Value("msi-fixture", "Read MSI tables from this recorded fixture JSON instead of msi.dll (for non-Windows hosts and checks)."),
+            ], 1, 1, "<source>"),
         ["gui"] = new("gui",
             "appwrap gui",
             "Launch the AppWrap wizard (AppWrap.exe beside the CLI).",
@@ -175,6 +188,14 @@ public static class CliArguments
             "Testing is an explicit action, exactly as in the wizard: builds never run a packaged app.",
             "The tested app runs once in a throwaway sandbox with a redirected profile; writes to the",
             "profile are portability violations. A failing verdict exits 4; the report is still written.",
+        ],
+        ["audit"] = [
+            "The static pass never executes the source: a zip is inventoried, an .msi's tables are read,",
+            "an .exe is identified by family (its payload is a stated audit limit, not a guess).",
+            "The runtime pass is the explicit second step, exactly like the test harness: it runs the",
+            "vendor installer silently into a scratch folder and the installed app once, on Windows.",
+            "A synthesized draft profile is never trusted automatically: review it in the profile",
+            "workspace (or with 'profile validate') and save it before 'build --profile' uses it.",
         ],
         ["config list"] = ["Documents: appinfo, launcher, installer, project. The project document holds the project's image properties (section Images, keys IconPath and SidebarImagePath) from appwrap.project.json."],
         ["config get"] = ["Documents: appinfo, launcher, installer, project (section Images, keys IconPath and SidebarImagePath)."],
@@ -280,7 +301,7 @@ public sealed record BuildCommandOptions(
     string? Source, string Mode, string? Name, string? Version, string? Launch, string? Output,
     string? FilenameStyle, string? Icon, string? Sidebar,
     bool? StartMenu, bool? Desktop, bool? RunAfter, bool? Startup,
-    string? Website, string? Profile, string? Project, bool Overwrite)
+    string? Website, string? Profile, string? Project, bool Overwrite, string? AuditDraft = null)
 {
     /// <summary>The wizard's default output mode word.</summary>
     public const string DefaultMode = "installer";
@@ -300,7 +321,7 @@ public sealed record BuildCommandOptions(
             invocation.TriState("start-menu"), invocation.TriState("desktop"), invocation.TriState("run-after"),
             invocation.Has("startup") ? true : null,
             invocation.Value("website"), invocation.Value("profile"), invocation.Value("project"),
-            invocation.Has("overwrite"));
+            invocation.Has("overwrite"), invocation.Value("audit-draft"));
     }
 
     /// <summary>

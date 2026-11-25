@@ -245,6 +245,24 @@ the official installer sees the same honored surface.
   performs the equivalent step with the same pinned engine so the folder is
   complete when the official installer consumes it.
 
+## Conversion audit and generated profiles
+
+A package converted from a setup file or portable zip carries a launcher
+profile **drafted from audit evidence** (`docs/AUDIT.md`): the static and
+runtime audit passes report where the source app stores data and which
+registry entries it creates, and the synthesized draft maps those
+findings onto the ordinary PAL surface described above — `[RegistryKeys]`
+save/restore, covered `[RegistryValueWrite]`, `[DirectoriesMove]` /
+`[FilesMove]` redirects — through the same validator and planner as a
+hand-written profile, with guard-owned installer keys untouched.
+Findings with no honest PAL equivalent (services, drivers, hardcoded
+paths) are reported as unmapped, never faked into rules; a service or
+driver in the source is a hard warning that the converted package will
+still touch the host outside the launcher's cleanup. The draft is
+untrusted data until the user reviews and saves it in the profile
+workspace; neither audit pass is part of any build, and the static pass
+executes nothing.
+
 ## Custom code and the no-scripts guarantee
 
 - A payload carrying `.nsh`/`.nsi` files under `Other/Source` is **rejected**

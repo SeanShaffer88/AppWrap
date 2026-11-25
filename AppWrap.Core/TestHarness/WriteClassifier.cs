@@ -40,4 +40,8 @@ public static class WriteClassifier
 
     public static TestVerdict Verdict(IEnumerable<DetectedWrite> writes, bool timedOut, int? exitCode) =>
         timedOut || exitCode is not 0 || writes.Any(w => w.Violation) ? TestVerdict.Fail : TestVerdict.Pass;
+
+    /// <summary>The verdict when the registry was also observed: any registry violation fails the run too.</summary>
+    public static TestVerdict Verdict(IEnumerable<DetectedWrite> writes, IEnumerable<DetectedRegistryChange> registryChanges, bool timedOut, int? exitCode) =>
+        timedOut || exitCode is not 0 || writes.Any(w => w.Violation) || registryChanges.Any(c => c.Violation) ? TestVerdict.Fail : TestVerdict.Pass;
 }

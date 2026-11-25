@@ -35,7 +35,11 @@ public sealed record DetectedWrite(WatchedRootKind Root, string Path, WriteChang
 /// Schema version 1: camelCase fields — schemaVersion, appName, mode,
 /// launchCommand, startedUtc, durationSeconds, exitCode (null when the app was
 /// killed or never exited), timedOut, detectedWrites, violations (the subset of
-/// detectedWrites with violation = true), verdict.
+/// detectedWrites with violation = true), verdict. Registry observation is
+/// additive within schema 1: registryObserved says whether a registry
+/// provider took part, registryChanges lists the detected registry changes
+/// and registryViolations the subset that are portability violations (they
+/// also fail the verdict — see WriteClassifier).
 /// </summary>
 public sealed record TestReport(
     int SchemaVersion,
@@ -48,8 +52,16 @@ public sealed record TestReport(
     bool TimedOut,
     IReadOnlyList<DetectedWrite> DetectedWrites,
     IReadOnlyList<DetectedWrite> Violations,
-    TestVerdict Verdict)
+    TestVerdict Verdict,
+    bool RegistryObserved = false,
+    IReadOnlyList<DetectedRegistryChange>? RegistryChanges = null,
+    IReadOnlyList<DetectedRegistryChange>? RegistryViolations = null)
 {
+    /// <summary>Detected registry changes, or an empty list when the registry was not observed.</summary>
+    public IReadOnlyList<DetectedRegistryChange> RegistryChangeList => RegistryChanges ?? [];
+
+    /// <summary>Registry changes that are portability violations, or an empty list when not observed.</summary>
+    public IReadOnlyList<DetectedRegistryChange> RegistryViolationList => RegistryViolations ?? [];
     public const int CurrentSchemaVersion = 1;
 
     internal static JsonSerializerOptions JsonOptions { get; } = new()

@@ -117,10 +117,27 @@ public static class TestHarness
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>The registry roots observed when a registry provider takes part: the per-user and machine Software trees.</summary>
+    public static readonly IReadOnlyList<string> DefaultRegistryRoots = [@"HKCU\Software", @"HKLM\Software"];
+
     public static Task<TestRunResult> RunAsync(TestRunRequest request, CancellationToken token) =>
         RunAsync(request, new ProcessTestRunner(), token);
 
-    public static async Task<TestRunResult> RunAsync(TestRunRequest request, ITestProcessRunner runner, CancellationToken token)
+    public static Task<TestRunResult> RunAsync(TestRunRequest request, ITestProcessRunner runner, CancellationToken token) =>
+        RunAsync(request, runner, token, null, null);
+
+    /// <summary>
+    /// The same run with registry observation: when
+    /// <paramref name="registryProvider"/> is supplied, the registry roots
+    /// (default <see cref="DefaultRegistryRoots"/>) are snapshotted before
+    /// launch and after exit and the diff joins the report — file and
+    /// registry observation share the one explicit Test action, the same
+    /// sandbox and the same report. The registry itself is the host's (it
+    /// cannot be redirected like the profile folders), which is exactly why
+    /// a write there is classified as leakage.
+    /// </summary>
+    public static async Task<TestRunResult> RunAsync(TestRunRequest request, ITestProcessRunner runner, CancellationToken token,
+        IRegistrySnapshotProvider? registryProvider, IReadOnlyList<string>? registryRoots)
     {
         InputRules.Text(request.AppName, "app name");
         if (!Enum.IsDefined(request.Mode)) throw new UserInputException("Choose a supported test mode.");
@@ -173,6 +190,7 @@ public static class TestHarness
                 (WatchedRootKind.Temp, tempDir),
             };
             var before = roots.Select(r => TreeSnapshot.Capture(r.Directory, token)).ToArray();
+            var registryBefore = registryProvider?.Capture(registryRoots ?? DefaultRegistryRoots, token);
             var startedUtc = DateTimeOffset.UtcNow;
             var outcome = await runner.RunAsync(new TestProcessStart(executable, packageDir, environment), request.Timeout ?? DefaultTimeout, token).ConfigureAwait(false);
             var writes = new List<DetectedWrite>();
@@ -180,6 +198,9 @@ public static class TestHarness
                 foreach (var (path, change) in before[i].Diff(TreeSnapshot.Capture(roots[i].Directory, token)))
                     writes.Add(WriteClassifier.Describe(roots[i].Kind, path, change));
             var violations = writes.Where(w => w.Violation).ToList();
+            var registryChanges = registryBefore is null
+                ? null
+                : registryBefore.Diff(registryProvider!.Capture(registryRoots ?? DefaultRegistryRoots, token));
             var report = new TestReport(
                 TestReport.CurrentSchemaVersion,
                 request.AppName,
@@ -191,7 +212,12 @@ public static class TestHarness
                 outcome.TimedOut,
                 writes,
                 violations,
-                WriteClassifier.Verdict(writes, outcome.TimedOut, outcome.ExitCode));
+                registryChanges is null
+                    ? WriteClassifier.Verdict(writes, outcome.TimedOut, outcome.ExitCode)
+                    : WriteClassifier.Verdict(writes, registryChanges, outcome.TimedOut, outcome.ExitCode),
+                registryChanges is not null,
+                registryChanges,
+                registryChanges?.Where(c => c.Violation).ToList());
             WriteReport(request.ReportPath, report);
             result = new TestRunResult(report, Path.GetFullPath(request.ReportPath), null);
         }

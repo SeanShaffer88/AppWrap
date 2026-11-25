@@ -112,6 +112,36 @@ PAF Package folder never carries one (`docs/PAF-COMPLIANCE.md`).
 validator diagnostics, editor surface and CLI precedence are check-covered;
 WPF interaction on Windows **Unverified**.
 
+### Portable-conversion audit
+
+Converting a setup file or portable zip into a *proper* portable — one
+whose launcher redirects the app's data and cleans up its registry
+footprint — starts with an audit, in two passes (`docs/AUDIT.md`). The
+**static pass** executes nothing: a zip is safely extracted and
+inventoried (data-location heuristics, embedded-config hardcoded paths,
+`.reg` files parsed into registry findings), an MSI's File/Registry/
+Shortcut/Directory/ServiceInstall tables are read through `msi.dll`
+behind the `IMsiReader` seam (fixture reader for checks and non-Windows
+hosts), and an installer .exe is identified by family with its payload
+recorded as an explicit audit limit rather than a guess. The **runtime
+pass** extends the test harness with registry observation — HKCU/HKLM
+`Software` snapshot diffs in the same report shape, classified as
+launcher-backup / host leakage / machine-wide — and, for a conversion,
+silently installs the source into a scratch tree, launches the installed
+app once, and merges the observed registry writes into the report.
+Findings synthesize a **draft portable profile** over the existing model
+(`[RegistryKeys]` save/restore, covered `[RegistryValueWrite]` for exact
+string values, `[DirectoriesMove]`/`[FilesMove]` redirects; services,
+drivers, hardcoded paths and audit limits stay unmapped and visible),
+validated by the ordinary validator/planner and opened in the profile
+workspace for review — imports never grant trust, and the draft builds
+only after the user saves it. Wizard surface: **Convert a setup or
+zip…** on step 1; CLI: `audit` plus `build --audit-draft`.
+**Configuration validated** (classification, .reg/MSI-fixture parsing,
+snapshot diffing, synthesis and the CLI surface are check-covered);
+the real msi.dll reader, the registry provider, silent installs and all
+Windows runtime behavior **Unverified**.
+
 ### Backend provenance pin
 
 The stale `modifiedWizardSha256` pin in
@@ -143,18 +173,26 @@ backend passing its provenance check.
 
 - **Distribution through package managers.** AppWrap ships as a direct
   download ZIP only — no winget, Scoop or Chocolatey packages.
-- **Executing source installers or source-supplied actions.** AppWrap
-  never runs a source folder's installer, download actions or custom
-  hooks; a payload carrying custom build scripts is rejected, and the
-  blocked installer families above stay blocked until their gate exists.
-- **Registry observation in the test harness.** Detection is file-system
-  snapshot diffing only; the harness does not virtualize or monitor the
+- **Executing source-supplied actions during a build.** Builds never run
+  a source folder's installer, download actions or custom hooks; a
+  payload carrying custom build scripts is rejected, and the blocked
+  installer families above stay blocked until their gate exists. The
+  only executions in the product are the two explicit, separate user
+  actions that exist to observe behavior: the test harness's single
+  launch of a finished package, and the conversion audit's runtime pass
+  (a silent install into a scratch tree plus one launch of the installed
+  app) — neither is reachable from any build path.
+- **Registry virtualization in the test harness.** The harness observes
+  the registry by before/after snapshot diffing of the HKCU/HKLM
+  `Software` roots; it does not virtualize or continuously monitor the
   registry and makes no clean-machine guarantee
   (`docs/TEST-HARNESS.md`).
-- **Certifying portability or redistribution rights.** AppWrap does not
-  redirect an app's registry/profile writes, certify that an app is
-  portable, or grant rights to redistribute a packaged app; unknown
-  license information stays unknown/conservative.
+- **Certifying portability or redistribution rights.** The conversion
+  audit drafts a profile that redirects an app's data and registry
+  writes, but AppWrap does not certify that the result is fully portable
+  (findings it could not map stay visible as unmapped), or grant rights
+  to redistribute a packaged app; unknown license information stays
+  unknown/conservative.
 - **Replacing the PortableApps.com Platform.** AppWrap produces packages;
   it does not distribute, install, update or run portable apps for end
   users (`docs/PAF-COMPLIANCE.md`).
