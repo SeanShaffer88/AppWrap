@@ -1,6 +1,19 @@
 # AppWrap
 
-A native Windows wizard that wraps an application folder into a standard installer or a PortableApps.com-format package. Choose a folder, answer six, seven or eight questions, and build. No accounts, downloads or telemetry in the application; project editing is configuration bookkeeping only, and custom code stays behind an off-by-default Advanced mode (see Limits).
+## TL;DR
+
+AppWrap is a PortableApps.com development suite and guided package creator for Windows. A native wizard wraps an application folder into a standard installer, a portable package, both, or an uncompiled PAF Package folder; around it sit a PAF project model with guided configuration editors, a portable launcher profile workspace, project templates, and an explicit runtime test harness. A full command-line interface (`AppWrap.Cli.exe`) exposes every one of those capabilities to scripts and local AI operators. No accounts, downloads or telemetry in the application; project editing is configuration bookkeeping only, and custom code stays behind an off-by-default Advanced mode (see Limits).
+
+**Release status:** the latest GitHub release, **v0.2.0-preview**, predates the typed/pasted path fields, the **Package another app** reset, and the command-line interface. Those are complete on `main` and will ship in a future release; building from source (see Build and verify) is the way to get them today.
+
+## What it does
+
+- **Wizard** — choose a folder, answer six, seven or eight questions, and build an **Installer**, **Portable app**, **Both**, or **PAF Package**. Every folder and save-location field accepts typed or pasted paths as well as browsing, and **Package another app** on the final page resets to a fresh first page.
+- **PAF project model** — every chosen folder gains an `appwrap.project.json` (schema, targeted PAF version, source snapshot, build history, saved choices), validated field-by-field; the wizard's configuration panel edits its appinfo, launcher and installer documents with inline checks. Advanced mode (off by default, per project) alone unlocks direct `Custom.nsh` text editing.
+- **Portable launcher profiles** — for portable outputs, a profile workspace edits the launcher's rules (file/directory moves, registry save/restore, services, environment, and more) over a lossless INI model, with a capability catalogue, strict validation, and a previewed operation plan; PAL packages are built with the pinned, hash-verified PortableApps.com Launcher backend.
+- **Runtime test harness** — an explicit **Test package…** action runs a finished portable or PAF package once in a throwaway sandbox and reports where it wrote; builds themselves never run a packaged app.
+- **Templates** — **New project from template…** scaffolds a blank PAF project that validates cleanly (placeholders surface as TODO warnings) or records a wrapped-binary project from an existing folder.
+- **Command line** — `AppWrap.Cli.exe` mirrors the wizard and suite command-for-command, with `--json` output and defined exit codes (see Command line below and `docs/CLI.md`).
 
 ## Run
 
@@ -12,6 +25,8 @@ The final step offers `Name-Version-Setup` (default), `Name_Setup`, and `Name-Se
 
 Both outputs are prepared before either destination is changed. A handled second-file failure rolls the first back, or reports precise recovery paths if rollback is blocked. Cancellation is deferred during that short commit/recovery operation. This is not an atomic two-file transaction across process termination or power loss: recognizable `.appwrap-*.backup` and `.appwrap-*.tmp` files may remain beside the destination. Review those recovery files before deleting them; details identify the exact backup after a handled failure. A PAF Package folder is published with the same discipline: the staged folder is copied to an owned `.appwrap-*.tmp` folder beside the destination and verified against its tree hash, any previous package folder is moved to an `.appwrap-*.backup` folder, and a handled failure restores it.
 
+For portable outputs, the wizard's portable behavior step opens the profile workspace: the launcher rules that make an app portable — which files and folders move between the package and the host, which registry keys are saved and restored, environment variables, services, and cleanup behaviour — are edited as typed rules over the package's launcher configuration, checked against the profile validator as you work, and previewed as an operation plan before building. Profiles save and load as files; importing a profile never grants it trust, and a profile with validation errors stops the build before anything is written. Some installer-side rule families remain visibly blocked until the reviewed `AppWrapPreMutation` gate exists (see `docs/ROADMAP.md`); they are never silently dropped.
+
 Portable mode is for an application that already supports portable use. AppWrap does not redirect registry/profile writes, change dependencies or certify host cleanup. The complete original folder is retained under `App/Payload`, with a small native launcher that preserves its relative dependencies, working directory and caller arguments. The packaged application is never run during a build. Unknown license information is retained as unknown/conservative metadata; packaging does not grant redistribution rights.
 
 At installation, portable packages gracefully close the selected destination's main executable and AppWrap launcher before replacing payload files. Exact image paths determine ownership: another folder's same-name app is left running. Applications that refuse to close, have an unsaved-work prompt, or cannot be identified stop the upgrade after a bounded wait. Nothing is force-killed or restarted. Other child programs/services require application-specific handling. The official generated installer uses an original trusted AppWrap preinstall hook; arbitrary source hooks remain rejected. See `native/UpgradeGuard/README.md`.
@@ -19,6 +34,12 @@ At installation, portable packages gracefully close the selected destination's m
 ## Command line
 
 `AppWrap.Cli.exe` ships beside `AppWrap.exe` in the same folder and exposes every wizard and suite capability as commands — package a folder (`build`, all four modes), validate and inspect projects (`project validate|info|create`), read and edit project configuration (`config list|get|set`), validate portable profiles (`profile validate`), and run the test harness (`test`) — so scripts and local AI operators can drive AppWrap without the GUI. Every command accepts `--json` (one envelope object with the result and structured diagnostics) and `--verbose`; exit codes are 0 success, 2 usage error, 3 validation failed (nothing written), and 4 build/test failure. The CLI resolves its packaging backends from its own folder exactly like the GUI. Full reference: `docs/CLI.md`.
+
+```powershell
+appwrap build --source C:\Apps\ListSorter --mode both --output D:\Packages --json
+appwrap project validate C:\Apps\ListSorter
+appwrap test D:\Packages\ListSorterPortable --mode portable
+```
 
 ## Appearance and state
 

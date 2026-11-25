@@ -76,6 +76,15 @@ envelope, config round-trips, profile validation and dry-run builds are
 check-covered and smoke-run on a non-Windows host; real packaging runs on
 Windows **Unverified** (full reference: `docs/CLI.md`).
 
+### Backend provenance pin
+
+The stale `modifiedWizardSha256` pin in
+`third_party/portableapps/provenance.json` was refreshed from a real
+PowerShell run of the committed `tools/Prepare-PortableBackend.ps1` (the
+script deterministically produces the pinned value from the verified
+official Installer 3.9.24 archive), and v0.2.0-preview shipped with the
+backend passing its provenance check.
+
 ## Planned
 
 - **The `AppWrapPreMutation` gate.** The DownloadFiles, CopyLocalFiles and
@@ -87,18 +96,6 @@ Windows **Unverified** (full reference: `docs/CLI.md`).
   `docs/portable-profiles-contract.md`) is the prerequisite for enabling
   any of them; until then they stay blocked, visibly, rather than being
   silently dropped.
-- **PortableApps backend provenance-pin refresh (repository maintenance).**
-  The `modifiedWizardSha256` pinned in
-  `third_party/portableapps/provenance.json` does not match what the
-  committed `tools/Prepare-PortableBackend.ps1` produces from the verified
-  official Installer 3.9.24 archive: the archive hash matches its pin and
-  the extracted wizard source is provably the upstream source, but faithful
-  runs of the committed script (real PowerShell, both line-ending
-  variants) yield different modified-wizard hashes than the pin. The
-  backend must be re-prepared by a real run of the script and the pin (and
-  the regenerated `docs/portable-wizard.patch`) updated from that run
-  before the next release is assembled; no release ships a backend that
-  fails its own provenance check.
 - **Host runtime fixture qualification.** The portable-profiles
   qualification record lists what only a Windows host can prove: an actual
   PAL compile and a real source bundle inside a package, the runtime
