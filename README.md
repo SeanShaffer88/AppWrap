@@ -48,7 +48,7 @@ appwrap test D:\Packages\ListSorterPortable --mode portable
 
 ## Appearance and state
 
-Choose AppWrap, Catppuccin Mocha, Nord, Gruvbox Light or OLED Black in the Appearance list beside Cancel. These are native brush palettes; Windows high-contrast mode uses system colors. Window size, theme and preferred filename style are stored in `Data/window.json` beside AppWrap. Restoring bounds conservatively clamps to the primary monitor's work area, so secondary-monitor positions may move to the primary monitor after restart.
+Choose AppWrap, Catppuccin Mocha, Nord, Gruvbox Light or OLED Black in the Appearance list beside Exit. These are native brush palettes; Windows high-contrast mode uses system colors. Window size, theme and preferred filename style are stored in `Data/window.json` beside AppWrap. Restoring bounds conservatively clamps to the primary monitor's work area, so secondary-monitor positions may move to the primary monitor after restart.
 
 Build staging lives in `Data/Builds/<unique-id>` and is removed after each normal build/cancel/failure. If cleanup fails, the UI identifies retained owned paths in details. A crash or power loss can leave staged copies; with AppWrap closed, `Data/Builds` may be deleted. Removing the extracted AppWrap folder removes its own settings and bundled tools. Windows may independently record ordinary application execution history. No hidden monitoring or background service is installed.
 
