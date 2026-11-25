@@ -26,12 +26,12 @@ and WPF layout on Windows **Unverified** (full record:
 
 ### Development Suite expansion (Phases 1–6)
 
-- **Phase 1 — PAF project model.** `appwrap.project.json` (schema v2,
-  forward-only migration, unknown fields preserved), the bounded source
-  snapshot hash, and `PafValidator` with field-level diagnostics. The wizard
-  loads or infers a project for every chosen folder; the project file is
-  excluded from every package payload. **Configuration validated**
-  (`docs/project-model.md`).
+- **Phase 1 — PAF project model.** `appwrap.project.json` (schema v3,
+  forward-only migration chain v1→v2→v3, unknown fields preserved), the
+  bounded source snapshot hash, and `PafValidator` with field-level
+  diagnostics. The wizard loads or infers a project for every chosen folder;
+  the project file is excluded from every package payload.
+  **Configuration validated** (`docs/project-model.md`).
 - **Phase 2 — Configuration surface.** Guided editors for a project's
   appinfo, launcher and installer documents over the lossless INI model,
   inline `PafValidator` diagnostics, and the off-by-default, per-project
@@ -75,6 +75,29 @@ the same way. **Configuration validated**: argument parsing, the JSON
 envelope, config round-trips, profile validation and dry-run builds are
 check-covered and smoke-run on a non-Windows host; real packaging runs on
 Windows **Unverified** (full reference: `docs/CLI.md`).
+
+### Project image properties
+
+The launcher icon and the sidebar image are first-class project properties
+(project schema v3: `iconPath` / `sidebarImagePath` in
+`appwrap.project.json`, stored project-relative when the file lives in the
+project and absolute when it does not), not per-build picks that vanish when
+the wizard closes. Reopening a project restores the wizard's icon/sidebar
+steps from them; a build records the effective picks back, the same way the
+filename style is recorded. The configuration editors expose both on a
+Project tab, `PafValidator` checks them field-by-field (missing file,
+escaping path, unsupported picture type, the imaging layer's 32 MB bound),
+the CLI reaches them through `config … project Images …`, `project info`
+reports them, and `build` resolves flag > project > none. Inference picks
+up the conventional `App/AppInfo/appicon.ico` only; the sidebar has no
+conventional in-package location and is never inferred. The sidebar applies
+to the compiled portable output only: the official PortableApps.com
+Installer has no package-side sidebar input (its wizard deletes any
+package-side copy and compiles with its own installation's bitmap), so a
+PAF Package folder never carries one (`docs/PAF-COMPLIANCE.md`).
+**Configuration validated**: model round-trip, the v2→v3 migration,
+validator diagnostics, editor surface and CLI precedence are check-covered;
+WPF interaction on Windows **Unverified**.
 
 ### Backend provenance pin
 

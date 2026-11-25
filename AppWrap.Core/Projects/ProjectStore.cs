@@ -32,6 +32,39 @@ public static class ProjectStore
 
     public static string PathFor(string root) => Path.Combine(Path.GetFullPath(root), FileName);
 
+    /// <summary>
+    /// The conventional in-project location of a package icon: the file the
+    /// packaging flow itself writes into every staged package's App/AppInfo.
+    /// A folder already carrying one is treated as having chosen it.
+    /// </summary>
+    public const string ConventionalIconPath = "App/AppInfo/appicon.ico";
+
+    /// <summary>
+    /// Converts a chosen file path to the stored form used by the project's
+    /// path properties (icon, sidebar): project-relative in forward slashes
+    /// when the file lives inside the project root, the absolute path when it
+    /// lives outside — the record stays truthful instead of silently copying
+    /// user files into the project.
+    /// </summary>
+    public static string ToStoredPath(string root, string path)
+    {
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var full = Path.GetFullPath(path);
+        return InputRules.IsWithin(full, fullRoot)
+            ? PafLayout.ToDisplayPath(Path.GetRelativePath(fullRoot, full))
+            : full;
+    }
+
+    /// <summary>Resolves a stored project path (see <see cref="ToStoredPath"/>) back to an absolute file path.</summary>
+    public static string ResolveStoredPath(string root, string stored)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+        return Path.IsPathRooted(stored)
+            ? Path.GetFullPath(stored)
+            : Path.GetFullPath(Path.Combine(Path.GetFullPath(root),
+                stored.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
     /// <summary>Loads the project at <paramref name="root"/>, or null when the folder has no project file yet.</summary>
     public static PafProject? Load(string root)
     {
@@ -93,6 +126,13 @@ public static class ProjectStore
             CreatedUtc = DateTimeOffset.UtcNow,
             SourceSnapshotHash = snapshot.Sha256,
             SourceSnapshotTruncated = snapshot.Truncated,
+            // The icon has a conventional in-package location (ConventionalIconPath);
+            // the sidebar has none — the official installer keeps its sidebar bitmap
+            // in its own installation, never in the package (docs/PAF-COMPLIANCE.md) —
+            // so only the icon is ever inferred, and only when the file is there.
+            IconPath = File.Exists(Path.Combine(fullRoot, "App", "AppInfo", "appicon.ico"))
+                ? ConventionalIconPath
+                : null,
         };
         if (template is not null) project.UserChoices[ProjectScaffolder.TemplateChoiceKey] = template;
         return project;

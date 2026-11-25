@@ -154,7 +154,12 @@ public static class CommandRouter
                 ?? throw new UserInputException("No appwrap.project.json was found at " + projectRoot + ".");
         }
         var projectStyle = project is not null && project.UserChoices.TryGetValue("namingStyle", out var saved) ? saved : null;
-        var effective = options.WithProjectDefaults(project?.Name, projectStyle);
+        // The project's image properties are stored project-relative (or absolute
+        // for out-of-project files); resolve them against the project root so the
+        // precedence rule — flag > project > none — composes with flag paths.
+        var projectIcon = project?.IconPath is { } iconPath ? ProjectStore.ResolveStoredPath(projectRoot!, iconPath) : null;
+        var projectSidebar = project?.SidebarImagePath is { } sidebarPath ? ProjectStore.ResolveStoredPath(projectRoot!, sidebarPath) : null;
+        var effective = options.WithProjectDefaults(project?.Name, projectStyle, projectIcon, projectSidebar);
 
         PortableProfile? profile = null;
         if (effective.Profile is not null)
@@ -275,6 +280,11 @@ public static class CommandRouter
             {
                 project.Name = name;
                 project.UserChoices["namingStyle"] = style.ToString();
+                // The effective image picks are recorded as project properties,
+                // mirroring the wizard; stored project-relative when the file
+                // lives under the project root.
+                project.IconPath = effective.Icon is null ? null : ProjectStore.ToStoredPath(projectRoot, Path.GetFullPath(effective.Icon));
+                project.SidebarImagePath = effective.Sidebar is null ? null : ProjectStore.ToStoredPath(projectRoot, Path.GetFullPath(effective.Sidebar));
                 foreach (var (mode, _) in built) ProjectStore.RecordBuild(projectRoot, project, mode, token);
                 result.Lines.Add("Recorded in project: " + ProjectStore.PathFor(projectRoot));
             }
@@ -350,6 +360,16 @@ public static class CommandRouter
             history.Add(new JsonObject { ["mode"] = record.Mode, ["completedUtc"] = record.CompletedUtc.ToString("o") });
         var choices = new JsonObject();
         foreach (var pair in project.UserChoices) choices[pair.Key] = pair.Value;
+        JsonObject ImageInfo(string? stored)
+        {
+            var resolved = stored is null ? null : ProjectStore.ResolveStoredPath(root, stored);
+            return new JsonObject
+            {
+                ["path"] = stored,
+                ["resolved"] = resolved,
+                ["exists"] = resolved is not null && File.Exists(resolved),
+            };
+        }
         result.Data = new JsonObject
         {
             ["root"] = root,
@@ -360,12 +380,16 @@ public static class CommandRouter
             ["createdUtc"] = project.CreatedUtc.ToString("o"),
             ["sourceSnapshotHash"] = project.SourceSnapshotHash,
             ["sourceSnapshotTruncated"] = project.SourceSnapshotTruncated,
+            ["icon"] = ImageInfo(project.IconPath),
+            ["sidebar"] = ImageInfo(project.SidebarImagePath),
             ["buildHistory"] = history,
             ["userChoices"] = choices,
         };
         result.Lines.Add("Name: " + project.Name);
         result.Lines.Add("PAF spec: " + project.PafSpecVersion + " · project schema: " + project.SchemaVersion + (inferred ? " · inferred (no project file yet)" : " · from appwrap.project.json"));
         result.Lines.Add("Source snapshot: " + (project.SourceSnapshotTruncated ? "truncated (tree beyond snapshot bounds)" : project.SourceSnapshotHash ?? "none"));
+        result.Lines.Add("Icon: " + (project.IconPath ?? "(default)"));
+        result.Lines.Add("Sidebar image: " + (project.SidebarImagePath ?? "(default)"));
         result.Lines.Add("Builds recorded: " + project.BuildModeHistory.Count);
         return result;
     }
@@ -419,7 +443,28 @@ public static class CommandRouter
     private static ProjectDocumentKind ParseDocument(string word, string command) =>
         DocumentWords.TryGetValue(word, out var kind)
             ? kind
-            : throw new CliUsageException($"Unknown document '{word}'. Documents: appinfo, launcher, installer.", command);
+            : throw new CliUsageException($"Unknown document '{word}'. Documents: appinfo, launcher, installer, project.", command);
+
+    /// <summary>The config surface's fourth document: the project's own properties in appwrap.project.json.</summary>
+    private static bool IsProjectDocument(string word) => string.Equals(word, "project", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The project document's fields: section Images, the two image property keys.</summary>
+    private static readonly (string Key, string Label)[] ProjectImageFields =
+        [(ProjectConfigWorkspace.IconPathKey, "App icon"), (ProjectConfigWorkspace.SidebarImagePathKey, "Sidebar image")];
+
+    private static string? ProjectImageValue(ProjectConfigWorkspace workspace, string key) =>
+        string.Equals(key, ProjectConfigWorkspace.IconPathKey, StringComparison.OrdinalIgnoreCase) ? workspace.IconPath
+        : string.Equals(key, ProjectConfigWorkspace.SidebarImagePathKey, StringComparison.OrdinalIgnoreCase) ? workspace.SidebarImagePath
+        : null;
+
+    private static void RequireProjectImageField(string section, string key, string command)
+    {
+        if (!string.Equals(section, "Images", StringComparison.OrdinalIgnoreCase)
+            || !ProjectImageFields.Any(f => string.Equals(f.Key, key, StringComparison.OrdinalIgnoreCase)))
+            throw new CliUsageException(
+                $"The project document has one section, Images, with keys: {string.Join(", ", ProjectImageFields.Select(f => f.Key))}. Got [{section}] {key}.",
+                command);
+    }
 
     private static CliResult ConfigList(CliInvocation invocation)
     {
@@ -439,7 +484,34 @@ public static class CommandRouter
                 });
                 result.Lines.Add($"{DocumentWord(kind)} — {display} ({ProjectConfigWorkspace.FieldsFor(kind).Count} fields{(exists ? "" : ", not created yet")})");
             }
+            documents.Add(new JsonObject
+            {
+                ["document"] = "project", ["path"] = ProjectStore.FileName,
+                ["fields"] = ProjectImageFields.Length, ["exists"] = File.Exists(ProjectStore.PathFor(workspace.Root)),
+            });
+            result.Lines.Add($"project — {ProjectStore.FileName} ({ProjectImageFields.Length} fields)");
             result.Data = new JsonObject { ["root"] = workspace.Root, ["documents"] = documents };
+            return result;
+        }
+        if (IsProjectDocument(invocation.Positionals[1]))
+        {
+            var imageFields = new JsonArray();
+            foreach (var state in workspace.ImageFieldStates())
+            {
+                imageFields.Add(new JsonObject
+                {
+                    ["section"] = "Images", ["key"] = state.Key, ["label"] = state.Label,
+                    ["kind"] = "path", ["required"] = false,
+                    ["present"] = state.StoredPath is not null, ["value"] = state.StoredPath,
+                    ["resolved"] = state.ResolvedPath, ["exists"] = state.Exists,
+                });
+                result.Lines.Add($"project [Images] {state.Key} = {(state.StoredPath ?? "(not set)")}");
+            }
+            result.Data = new JsonObject
+            {
+                ["root"] = workspace.Root, ["document"] = "project",
+                ["path"] = ProjectStore.FileName, ["fields"] = imageFields,
+            };
             return result;
         }
         var documentKind = ParseDocument(invocation.Positionals[1], invocation.CommandKey);
@@ -467,6 +539,22 @@ public static class CommandRouter
     {
         var result = new CliResult { Command = invocation.CommandKey };
         var workspace = ProjectConfigWorkspace.Load(Path.GetFullPath(invocation.Positionals[0]));
+        if (IsProjectDocument(invocation.Positionals[1]))
+        {
+            var imageSection = invocation.Positionals[2];
+            var imageKey = invocation.Positionals[3];
+            RequireProjectImageField(imageSection, imageKey, invocation.CommandKey);
+            var stored = ProjectImageValue(workspace, imageKey);
+            var canonicalKey = ProjectImageFields.First(f => string.Equals(f.Key, imageKey, StringComparison.OrdinalIgnoreCase)).Key;
+            result.Data = new JsonObject
+            {
+                ["document"] = "project", ["section"] = "Images", ["key"] = canonicalKey,
+                ["present"] = stored is not null, ["value"] = stored,
+                ["resolved"] = stored is null ? null : ProjectStore.ResolveStoredPath(workspace.Root, stored),
+            };
+            result.Lines.Add(stored ?? "(not set)");
+            return result;
+        }
         var kind = ParseDocument(invocation.Positionals[1], invocation.CommandKey);
         var section = invocation.Positionals[2];
         var key = invocation.Positionals[3];
@@ -486,6 +574,29 @@ public static class CommandRouter
     {
         var result = new CliResult { Command = invocation.CommandKey };
         var workspace = ProjectConfigWorkspace.Load(Path.GetFullPath(invocation.Positionals[0]));
+        if (IsProjectDocument(invocation.Positionals[1]))
+        {
+            var imageSection = invocation.Positionals[2];
+            var imageKey = invocation.Positionals[3];
+            var imageValue = invocation.Positionals[4];
+            RequireProjectImageField(imageSection, imageKey, invocation.CommandKey);
+            var canonicalKey = ProjectImageFields.First(f => string.Equals(f.Key, imageKey, StringComparison.OrdinalIgnoreCase)).Key;
+            // The workspace normalizes the stored form (project-relative when the
+            // file lives in the project) and Save persists the project file.
+            if (string.Equals(canonicalKey, ProjectConfigWorkspace.IconPathKey, StringComparison.Ordinal))
+                workspace.IconPath = imageValue;
+            else
+                workspace.SidebarImagePath = imageValue;
+            workspace.Save();
+            var storedBack = ProjectImageValue(workspace, canonicalKey);
+            result.Data = new JsonObject
+            {
+                ["document"] = "project", ["section"] = "Images", ["key"] = canonicalKey,
+                ["value"] = storedBack, ["path"] = ProjectStore.FileName,
+            };
+            result.Lines.Add($"Set project [Images] {canonicalKey} = {storedBack} (saved to {ProjectStore.FileName}).");
+            return result;
+        }
         var kind = ParseDocument(invocation.Positionals[1], invocation.CommandKey);
         var section = invocation.Positionals[2];
         var key = invocation.Positionals[3];
