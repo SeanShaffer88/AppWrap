@@ -23,7 +23,7 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !ifndef VERSION
-  !define VERSION "0.2.1"
+  !define VERSION "0.2.2"
 !endif
 !ifndef PAYLOAD
   !define PAYLOAD "..\outputs\AppWrap-${VERSION}-win-x64"
