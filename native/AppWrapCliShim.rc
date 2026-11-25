@@ -1,0 +1,6 @@
+// AppWrapCliShim.rc — embeds AppWrap's own application icon (the red
+// ribbon "A" on a dark tile) into AppWrap.Cli.exe so the shim carries
+// the same icon as AppWrap.exe. The .ico is the single source of truth
+// at AppWrap.Gui/Assets/AppWrap.ico; this file only references it.
+// Build routes are documented in native/README.md.
+1 ICON "../AppWrap.Gui/Assets/AppWrap.ico"
