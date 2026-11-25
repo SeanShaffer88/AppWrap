@@ -8,8 +8,10 @@ typed rule surfaces (`InstallerRules`, `CapabilityCatalog`), the capability matr
 (`docs/portable-capability-matrix.md`), and the pinned backend provenance — not in
 the public manuals alone.
 
-AppWrap is not endorsed by PortableApps.com, and generated packages do not claim
-PortableApps.com certification or redistribution rights for the packaged app.
+**AppWrap is not endorsed by PortableApps.com.** AppWrap is an independent
+project; it is not affiliated with, sponsored by, or certified by
+PortableApps.com, and generated packages do not claim PortableApps.com
+certification or redistribution rights for the packaged app.
 
 ## Targeted specification
 
@@ -42,6 +44,16 @@ a build that never executes source-supplied actions. The PAF Package exists for
 interoperability: a folder the official toolchain consumes as-is, for users who
 want the official installer (or the PortableApps.com Platform's own packaging
 flow) to perform the final compile.
+
+AppWrap does **not** replace the PortableApps.com Platform: it neither
+distributes, installs, updates nor runs portable apps for end users. It only
+produces packages (compiled, or as a folder for the official installer) that
+the Platform and the official installer can consume. The Development Suite's
+later phases do not change this relationship: the project editors and the
+template scaffolder prepare the same documents described below, and the
+runtime test harness only *runs* a finished package in a throwaway sandbox to
+report where it writes — it is not part of the toolchain and certifies
+nothing.
 
 The folder differs from the compiled package's contents only where a folder
 consumer requires it:
@@ -83,6 +95,53 @@ The official installer reads `appinfo.ini` and `installer.ini` from
 applies `installer.ini` at install time. AppWrap's folder supplies exactly that
 input; the fixture in `PafPackageChecks` mirrors this layout and the staged tree
 must pass `PafValidator` with zero errors.
+
+## Support matrix: three distinct surfaces
+
+"Supported" means different things on three surfaces that must not be
+conflated: what the **generator emits** into a package, what the **project
+editors** (Development Suite Phase 2) expose for a project's own documents,
+and what **`PafValidator`** checks. The detailed tables in the following
+sections are the authority; this matrix is the summary. Statuses:
+**Required** (the format or AppWrap requires it), **Optional** (honored when
+present), **Supported** (modeled/typed and validated), **Not supported**
+(intentionally absent or blocked).
+
+### appinfo.ini
+
+| Surface | Emitted by generator | Editable in project editors | Checked by PafValidator |
+|---|---|---|---|
+| `[Format] Type`, `Version` | Always — **Required** | Supported | Type wrong = error; Version differing from the project target = info |
+| `[Details] Name`, `AppID` | Always — **Required** | Supported | Missing = error |
+| `[Details] Publisher`, `Homepage`, `Category`, `Description`, `Language` | Always — **Optional** (preserved or fallback) | Supported | Missing/invalid = warning or info |
+| `[Details] Donate`, `Trademarks`, `InstallType` | Not emitted | Supported | Not checked |
+| `[License]` four booleans | Always — **Optional** | Supported | Non-`true`/`false` value = warning |
+| `[License] EULAVersion` | Not emitted | Supported | Not checked |
+| `[Version] PackageVersion` | Always — **Required** | Supported | Missing or non-numeric = error |
+| `[Version] DisplayVersion` | Always — **Optional** | Supported | Missing = warning |
+| `[Control] Start` | Always — **Required** | Supported | Missing = error |
+| `[Control] Icons`, `BaseAppID` | Always — **Optional** | Supported | Missing `Icons` = info |
+| `[Control] ExtractIcon/ExtractName`, `BaseAppID64`, `BaseAppIDARM64`, `ExitEXE/ExitParameters` | Not emitted | Supported | Not checked |
+| `[Dependencies]`, `[SpecialPaths] Plugins` | Not emitted | Supported | Not checked |
+| `[Control] StartN/NameN`, associations families, `EULA.txt` file | Not emitted | Not supported | Not checked |
+
+### Launcher INI (`App/AppInfo/Launcher/<AppID>.ini`, PAL profiles only)
+
+| Surface | Generated from profile | Editable in project editors | Checked |
+|---|---|---|---|
+| `[Launch]` scalars (executable + variants, arguments, working directory, OS bounds, `CloseEXE`, `SplashTime`, wait/instance/temp/splash/shell switches) | Supported | Supported | `PortableProfileValidator` + `PafValidator` (`ProgramExecutable` missing = error) |
+| `[Activate] Registry/Java/XML`, `[LiveMode] CopyApp`, `[Language]` scalars | Supported | Supported | Same |
+| Sequential and pattern families (`FilesMove`, `DirectoriesMove`, `RegistryKeys`, `RegistryValueWrite`, `FileWriteN`, environment, cleanup families) | Supported (typed rule views + planner) | Via the profile workspace / document text, not the scalar editor catalogue | Same, plus planner cross-rule diagnostics |
+| `[LiveMode] CopyData` | **Not supported** — removed in PAL 2.2.9, diagnosed not honored | Not offered | Diagnosed |
+
+### installer.ini
+
+| Surface | Emitted by generator | Editable in project editors | Checked |
+|---|---|---|---|
+| Guard settings (`[Source] IncludeInstallerSource`, `[MainDirectories] RemoveAppDirectory/RemoveOtherDirectory`, `[CheckRunning] CloseEXE`) | Always — **Required**, guard-owned | Visible; generated value always wins | `InstallerValidator` (`GuardSettingOverride`) |
+| `[MainDirectories] RemoveDataDirectory` | Only as `false` — **Not supported** as a setting | Not offered | Forbidden in profiles (`RemovedDataDirectoryNotSupported`) |
+| Preserve/remove lists (≤10 each), `[OptionalComponents]`, `[Languages]` | Only from a validated PAL profile — **Optional** | Scalars supported; numbered lists via document text | `InstallerValidator` (limits, overlap, `Data` protection, `ENGLISH=true`) |
+| `DownloadFiles`, `CopyLocalFiles`, `LegacyVersions`, plugin/common-files mode | **Not supported** — blocked (`GuardOrderBlocked`), never emitted as effective configuration | Discoverable, shown blocked | Configuration-checked while blocked (URL/hash shape) |
 
 ## appinfo.ini
 
@@ -195,6 +254,12 @@ The compliance matrix above is checked by `PafPackageChecks`: the staged PAF
 tree for a fixture carries the required files at the paths above, its
 `appinfo.ini`/`installer.ini`/launcher documents pass `PafValidator` with zero
 errors at PAF 3.9, and the compiled flow's staging is byte-identical for the
-generated documents. Compilation of the folder by the official installer and
+generated documents. `ComplianceChecks` additionally pins the matrix itself:
+it asserts every key this document lists as emitted is present in
+`PortableAppsGenerator` output, every key listed as editable is present in
+the project editors' field catalogue, and every editable launcher key is
+classified by the pinned-PAL `CapabilityCatalog` — so a supported field
+regressing in code fails the suite even if this document is not updated.
+Compilation of the folder by the official installer and
 runtime install/upgrade behavior on Windows remain **Unverified** here, as with
 the compiled outputs (see `docs/portable-profiles-qualification.md`).

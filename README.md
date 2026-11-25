@@ -32,6 +32,15 @@ Choosing a folder now records an `appwrap.project.json` project file at its root
 
 After a portable or PAF Package build, the wizard offers a **Test package…** panel (see `docs/TEST-HARNESS.md`): an explicit, separate action that runs the packaged app once in a throwaway sandbox with a redirected profile, reports where it wrote in `test-report.json`, and flags profile writes as portability violations. Builds never execute a packaged app — testing happens only from that panel — and detection is coarse snapshot diffing: the registry is not observed and no clean-machine guarantee is made.
 
+## Documentation
+
+- `docs/PAF-COMPLIANCE.md` — how AppWrap's outputs relate to the official PortableApps.com toolchain: targeted format version, the appinfo/launcher/installer support matrices, and what is intentionally omitted or blocked.
+- `docs/TEST-HARNESS.md` — the explicit Test package action: sandbox, write detection, `test-report.json`, and its limits.
+- `docs/ROADMAP.md` — what is implemented, what is planned, and what is intentionally out of scope.
+- `docs/project-model.md` — the `appwrap.project.json` project file: schema, migration, snapshot, validator, and the configuration editors.
+- `docs/portable-profiles-qualification.md` — per-phase evidence for the portable-profiles work, including everything still Unverified.
+- `docs/architecture.md` — module contracts and build internals.
+
 ## Build and verify
 
 Windows x64, PowerShell 7, .NET SDK 10.0.404 or a compatible .NET 10 SDK and the pinned backend folders are required. No third-party NuGet runtime packages are used.
