@@ -56,6 +56,7 @@ internal static class Program
         var input = new AppWrapInput(source, "AppWrap Test", "1.2", "bin\\Demo.exe", true, false, Path.Combine(evidence, "standard.exe"));
         InputRules.Validate(input);
         NamingChecks.Run(Check, Reject);
+        WizardChecks.Run(Check, Reject);
         ProjectChecks.Run(evidence, Check, Reject);
         ProjectConfigChecks.Run(evidence, Check, Reject);
         ScaffoldChecks.Run(evidence, Check, Reject);

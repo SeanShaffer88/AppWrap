@@ -56,9 +56,16 @@ public partial class MainWindow
         var folderRow = new Grid { Margin = new(0, 0, 0, 10) };
         folderRow.ColumnDefinitions.Add(new());
         folderRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var folderText = Identify(new TextBox { Text = string.IsNullOrEmpty(testFolder) ? "Choose a built PAF Package folder, or a portable app folder extracted from a package" : testFolder, ToolTip = testFolder, Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsReadOnly = true, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TestPackageFolder");
+        var folderText = Identify(new TextBox { Text = testFolder, ToolTip = "Type or paste a built PAF Package folder, or a portable app folder extracted from a package — or use Choose folder…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsReadOnly = false, IsEnabled = !testBusy, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TestPackageFolder");
         folderText.SetResourceReference(Control.ForegroundProperty, "Text");
         folderRow.Children.Add(folderText);
+        WirePathCommit(folderText, text =>
+        {
+            if (testBusy) return;
+            var folder = WizardPaths.NormalizePathText(text);
+            if (WizardPaths.SamePath(folder, testFolder)) { Render(); return; }
+            testFolder = folder; testReport = null; Render();
+        });
         var choose = Identify(new Button { Content = "Choose folder…", Padding = new(12, 6, 12, 6), MinHeight = 40, FontSize = 13, IsEnabled = !testBusy }, "TestChooseFolder");
         choose.Click += (_, _) =>
         {
