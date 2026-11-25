@@ -58,6 +58,7 @@ internal static class Program
         NamingChecks.Run(Check, Reject);
         WizardChecks.Run(Check, Reject);
         await CliChecks.RunAsync(evidence, Check, Reject);
+        ModeDetectorChecks.Run(Check);
         ProjectChecks.Run(evidence, Check, Reject);
         ProjectConfigChecks.Run(evidence, Check, Reject);
         ScaffoldChecks.Run(evidence, Check, Reject);

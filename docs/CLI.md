@@ -1,15 +1,31 @@
 # AppWrap command-line reference
 
-`AppWrap.Cli.exe` is the command-line interface to AppWrap. It ships beside
-`AppWrap.exe` in the distribution folder and exposes every capability of
-the wizard and the Development Suite as commands, so scripts and local AI
-operators can drive AppWrap without the GUI. The CLI is a thin shell over
-the same Core/Build operations the wizard calls: validation, packaging,
-project handling and the test harness behave identically, and failures
-surface as the same typed errors.
+AppWrap is a dual-mode executable: the wizard and the command-line
+interface are one self-contained `AppWrap.exe`, and the two entry points
+are interchangeable.
 
-Keep the CLI in the distribution folder: like the GUI, it resolves its
-packaging backends from the `third_party` tree beside the executable and
+- **`AppWrap.Cli.exe`** is a tiny native console shim that forwards its
+  arguments to `AppWrap.exe` (located beside it) and exits with the same
+  exit code. It exists so scripts keep a console-subsystem entry point
+  with the familiar name; if `AppWrap.exe` is missing beside it, the shim
+  exits 4 with an explanatory message.
+- **`AppWrap.exe` itself** accepts the same command line directly:
+  `AppWrap.exe build …`, `AppWrap.exe --help`, and so on. With no
+  arguments — or an unrecognized first argument — it opens the wizard
+  exactly as before; only an unmistakable CLI invocation (a command name
+  or a global flag as the first argument) runs the CLI in-process.
+- The router's `gui` command, when it is already running inside
+  `AppWrap.exe`, reports that the GUI is this executable and exits 0
+  instead of launching a sibling.
+
+The CLI exposes every capability of the wizard and the Development Suite
+as commands, so scripts and local AI operators can drive AppWrap without
+the GUI. It is a thin shell over the same Core/Build operations the wizard
+calls: validation, packaging, project handling and the test harness behave
+identically, and failures surface as the same typed errors.
+
+Keep the executables in the distribution folder: the CLI resolves its
+packaging backends from the `third_party` tree beside `AppWrap.exe` and
 stages builds in the `Data` folder beside it. Run from a development tree
 without backends, commands that do not need a backend (validation, config,
 project, dry-run) still work, and builds that need one fail with the

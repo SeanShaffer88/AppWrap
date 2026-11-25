@@ -76,6 +76,19 @@ envelope, config round-trips, profile validation and dry-run builds are
 check-covered and smoke-run on a non-Windows host; real packaging runs on
 Windows **Unverified** (full reference: `docs/CLI.md`).
 
+**Dual-mode executable (v0.2.3, pending release).** The CLI is now a
+library hosted in-process by `AppWrap.exe`: one self-contained executable
+is both the wizard and the CLI, so a release carries a single .NET runtime
+instead of two. `CliModeDetector` routes the command line conservatively —
+no arguments or an unrecognized first argument opens the wizard; a command
+name or global flag runs the CLI — and the shipped `AppWrap.Cli.exe` is a
+tiny native shim (`native/AppWrapCliShim.c`) that forwards to
+`AppWrap.exe --cli …` and propagates the exit code, keeping the two entry
+points interchangeable. The router's `gui` command, when hosted, reports
+that the GUI is this executable and exits 0. **Configuration validated**:
+the mode detector is check-covered for both sides of the routing line;
+Windows runtime **Unverified**.
+
 ### Project image properties
 
 The launcher icon and the sidebar image are first-class project properties

@@ -1,14 +1,17 @@
 param([string]$Destination)
 $ErrorActionPreference='Stop'
-$Version='0.2.2'
+$Version='0.2.3'
 $repository=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if(!$Destination){$Destination=[IO.Path]::GetFullPath((Join-Path $repository "../../outputs/AppWrap-$Version-win-x64"))}
 if(Test-Path -LiteralPath $Destination){throw 'Publish destination must be new. Preserve the previous artifact and choose a different destination.'}
 $dotnet=(Get-Command dotnet.exe -ErrorAction Stop).Source
 & 'C:/Users/Sean Shaffer/Documents/DevTools/Invoke-DevBuild.ps1' -ProjectPath $repository -Executable $dotnet -ArgumentList @('publish','AppWrap.Gui/AppWrap.Gui.csproj','-c','Release','-r','win-x64','--self-contained','true','-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=false','-o',$Destination) -ArtifactPath @((Join-Path $Destination 'AppWrap.exe')) -TimeoutSeconds 240
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-& 'C:/Users/Sean Shaffer/Documents/DevTools/Invoke-DevBuild.ps1' -ProjectPath $repository -Executable $dotnet -ArgumentList @('publish','AppWrap.Cli/AppWrap.Cli.csproj','-c','Release','-r','win-x64','--self-contained','true','-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=false','-o',$Destination) -ArtifactPath @((Join-Path $Destination 'AppWrap.Cli.exe')) -TimeoutSeconds 240
-if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+# Dual-mode since 0.2.3: AppWrap.Cli is a library hosted by AppWrap.exe, so
+# there is no second self-contained publish. AppWrap.Cli.exe in the
+# distribution is the tiny native shim (native/AppWrap.Cli.exe, source
+# native/AppWrapCliShim.c) that forwards to AppWrap.exe --cli.
+Copy-Item -LiteralPath (Join-Path $repository 'native/AppWrap.Cli.exe') -Destination (Join-Path $Destination 'AppWrap.Cli.exe')
 New-Item -ItemType Directory -Path (Join-Path $Destination 'third_party') | Out-Null
 foreach($backend in @('innosetup','portableapps','pal')){
   Copy-Item -LiteralPath (Join-Path $repository "third_party/$backend") -Destination (Join-Path $Destination 'third_party') -Recurse
