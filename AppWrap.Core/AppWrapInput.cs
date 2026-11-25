@@ -6,7 +6,7 @@ public sealed record AppWrapInput(
     string SourceFolder, string AppName, string AppVersion, string MainExecutable,
     bool CreateStartMenuShortcut, bool CreateDesktopShortcut, string OutputPath,
     OutputMode Mode = OutputMode.Standard, string? LauncherIconPath = null, string? SidebarImagePath = null,
-    StandardInstallerOptions? StandardOptions = null);
+    StandardInstallerOptions? StandardOptions = null, PortableProfiles.PortableProfile? Profile = null);
 
 public sealed class UserInputException(string message) : Exception(message);
 

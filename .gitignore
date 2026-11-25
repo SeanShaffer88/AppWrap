@@ -5,6 +5,7 @@ artifacts/
 .vs/
 third_party/innosetup/*
 third_party/portableapps/*
+third_party/pal/*
 third_party/portableapps-prepfailed*/
 !third_party/**/README.md
 !third_party/**/provenance.json

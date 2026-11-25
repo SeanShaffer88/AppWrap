@@ -1,4 +1,5 @@
 using AppWrap.Core;
+using AppWrap.Core.PortableProfiles;
 using AppWrap.Generators;
 using AppWrap.Imaging;
 using System.Text;
@@ -37,14 +38,38 @@ internal static class PortableBuild
         // These settings are coupled to the trusted embedded guard. No caller-supplied hook is accepted.
         await File.WriteAllTextAsync(Path.Combine(package, "Other", "Source", "PortableApps.comInstallerCustom.nsh"), UpgradeGuardGenerator.Generate(input, guardPath), new UTF8Encoding(true), token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(metadataDir, "installer.ini"), UpgradeGuardGenerator.InstallerSettings, new UTF8Encoding(true), token).ConfigureAwait(false);
+        // A Pal profile replaces the basic launch shim with a real compiled PAL launcher.
+        // PackagingOnly (or no profile) keeps the existing shim path unchanged below.
+        PortableProfile? palProfile = input.Profile is { ExecutionKind: PortableExecutionKind.Pal } profile ? profile : null;
+        if (palProfile is not null)
+        {
+            var errors = PortableProfileValidator.Validate(palProfile).Where(d => d.Severity == ProfileSeverity.Error).ToList();
+            if (errors.Count != 0)
+                throw new UserInputException("The portable profile is not ready to build: " +
+                    string.Join(" ", errors.Take(5).Select(d => d.Message)) +
+                    (errors.Count > 5 ? $" (+{errors.Count - 5} more problems)" : ""));
+            var launcherDir = Path.Combine(metadataDir, "Launcher"); Directory.CreateDirectory(launcherDir);
+            await File.WriteAllTextAsync(Path.Combine(launcherDir, PortableAppsGenerator.PackageId(input) + ".ini"), PortableLauncherGenerator.Generate(input, palProfile), new UTF8Encoding(true), token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(package, "Other", "AppWrap-PAL-NOTICES.txt"), PalNotices(palProfile), new UTF8Encoding(true), token).ConfigureAwait(false);
+        }
         var backend = Path.Combine(stage, "builder");
         var installedBackend = Path.Combine(baseDirectory, "third_party", "portableapps");
         if (!File.Exists(Path.Combine(installedBackend, "AppWrapPackagingBuilder.exe"))) throw new BuildFailureException("A packaging component is missing. Download a complete copy of AppWrap and try again.", "Missing portable packaging backend.");
         Copy( installedBackend, backend, token);
-        var shimSource = Path.Combine(stage, "launcher.nsi");
-        await File.WriteAllTextAsync(shimSource, LaunchShimGenerator.Generate(input, Path.Combine(package, PortableAppsGenerator.PackageId(input) + ".exe"), Path.Combine(metadataDir, "appicon.ico")), new UTF8Encoding(true), token).ConfigureAwait(false);
-        var shim = await ProcessRunner.RunAsync(Path.Combine(backend, "App", "nsis", "makensis.exe"), ["/V2", shimSource], stage, token).ConfigureAwait(false);
-        if (shim.ExitCode != 0) throw new BuildFailureException("AppWrap couldn’t prepare the app's portable launch file. Check the app folder and try again.", $"Launcher compiler exit code: {shim.ExitCode}\n{shim.Log}");
+        if (palProfile is not null)
+        {
+            // The PAL compile needs only the staged package folder and produces the root
+            // launcher inside it; it runs before the packaging builder, never instead of it.
+            // Failure is fatal — a profile package never falls back to the basic shim.
+            await PalCompiler.CompileAsync(input, palProfile, package, stage, baseDirectory, token).ConfigureAwait(false);
+        }
+        else
+        {
+            var shimSource = Path.Combine(stage, "launcher.nsi");
+            await File.WriteAllTextAsync(shimSource, LaunchShimGenerator.Generate(input, Path.Combine(package, PortableAppsGenerator.PackageId(input) + ".exe"), Path.Combine(metadataDir, "appicon.ico")), new UTF8Encoding(true), token).ConfigureAwait(false);
+            var shim = await ProcessRunner.RunAsync(Path.Combine(backend, "App", "nsis", "makensis.exe"), ["/V2", shimSource], stage, token).ConfigureAwait(false);
+            if (shim.ExitCode != 0) throw new BuildFailureException("AppWrap couldn’t prepare the app's portable launch file. Check the app folder and try again.", $"Launcher compiler exit code: {shim.ExitCode}\n{shim.Log}");
+        }
         if (input.SidebarImagePath != null) ImageAssets.WriteSidebar(input.SidebarImagePath, Path.Combine(backend, "App", "installer", "PortableApps.comInstaller.bmp"));
         var result = await ProcessRunner.RunAsync(Path.Combine(backend, "AppWrapPackagingBuilder.exe"), [package], backend, token).ConfigureAwait(false);
         var logPath = Path.Combine(backend, "Data", "PortableApps.comInstallerLog.txt");
@@ -53,6 +78,29 @@ internal static class PortableBuild
         if (result.ExitCode != 0 || artifacts.Length != 1) throw new BuildFailureException("AppWrap couldn’t build the portable package. Check the app folder and try again.", $"Builder exit code: {result.ExitCode}\n{result.Log}\n{log}");
         return artifacts[0];
     }
+
+    private static string PalNotices(PortableProfile profile) => $"""
+        PortableApps.com Launcher (PAL) — generated package notices
+
+        This package's root launcher was compiled by AppWrap from the official
+        PortableApps.com Launcher (PAL) {profile.Engine.PalVersion} source, using the NSIS
+        {profile.Engine.NsisVersion} compiler bundled with that PAL release.
+
+        Pinned source archive: PortableApps.comLauncher_{profile.Engine.PalVersion}.paf.exe
+        Archive SHA-256: {profile.Engine.PalSha256}
+        Bundled makensis.exe SHA-256: {profile.Engine.NsisSha256}
+        Source: https://portableapps.com/apps/development/portableapps.com_launcher
+
+        The PortableApps.com Launcher is licensed under the GNU General Public License,
+        version 2 or (at your option) any later version (GPL-2.0-or-later). The compiled
+        launcher in this package is covered by that license; it is not covered by
+        AppWrap's MIT license.
+
+        The full corresponding-source bundle for the compiled launcher is a separate
+        distribution gate (P6). This notice alone does not satisfy source accompaniment
+        for public redistribution.
+
+        """;
 
     private static void Copy(string source, string destination, CancellationToken token)
     {

@@ -1,4 +1,5 @@
 using AppWrap.Core;
+using AppWrap.Core.PortableProfiles;
 using AppWrap.Generators;
 
 namespace AppWrap.Build;
@@ -71,6 +72,8 @@ public sealed partial class BuildService(string baseDirectory, string stateDirec
     {
         InputRules.Validate(input);
         if (input.Mode is not (OutputMode.Standard or OutputMode.PortableApps)) throw new UserInputException("Choose a supported output format.");
+        if (input.Profile is { ExecutionKind: PortableExecutionKind.Pal } && input.Mode == OutputMode.Standard)
+            throw new UserInputException("Choose the portable package format to use a portable profile.");
         if (Directory.Exists(input.OutputPath)) throw new UserInputException("Choose a file name, rather than a folder, for the package.");
         var sourcePath = Path.GetFullPath(input.SourceFolder);
         foreach (var boundary in new[] { baseDirectory, stateDirectory })

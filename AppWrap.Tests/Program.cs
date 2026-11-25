@@ -36,6 +36,7 @@ internal static class Program
         InputRules.Validate(input);
         NamingChecks.Run(Check, Reject);
         ProfileChecks.Run(Check, Reject);
+        await PalChecks.RunAsync(root, evidence, input, Check, Reject);
         StandardOptionsChecks.Run(input, Check, Reject);
         UpgradeGuardChecks.Run(input, Check, Reject);
         await BackendLogChecks.Run(evidence, Check);
