@@ -31,7 +31,7 @@ try {
     @'
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><NuGetAudit>false</NuGetAudit></PropertyGroup>
-  <ItemGroup><PackageReference Include="AppWrap.Core" Version="0.2.3"/><PackageReference Include="AppWrap.Generators" Version="0.2.3"/><PackageReference Include="AppWrap.Imaging" Version="0.2.3"/><PackageReference Include="AppWrap.Build" Version="0.2.3"/></ItemGroup>
+  <ItemGroup><PackageReference Include="AppWrap.Core" Version="0.2.4"/><PackageReference Include="AppWrap.Generators" Version="0.2.4"/><PackageReference Include="AppWrap.Imaging" Version="0.2.4"/><PackageReference Include="AppWrap.Build" Version="0.2.4"/></ItemGroup>
 </Project>
 '@ | Set-Content -LiteralPath (Join-Path $ConsumerDirectory 'Consumer.csproj')
     @'

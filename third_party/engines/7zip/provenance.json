@@ -1,0 +1,10 @@
+{
+  "engine": "SevenZip",
+  "version": "26.06",
+  "archive": "7z2606-extra.7z",
+  "downloadUrl": "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-extra.7z",
+  "sha256Pinned": false,
+  "sha256Observed": "396c180f12d2247c24b0b1fcd482c6fc2a2700f61211ffede1061dd971f5e104",
+  "md5Verified": false,
+  "preparedUtc": "2026-11-25T19:07:14.8306950Z"
+}

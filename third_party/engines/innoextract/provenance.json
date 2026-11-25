@@ -1,0 +1,10 @@
+{
+  "engine": "InnoExtract",
+  "version": "1.9",
+  "archive": "innoextract-1.9-windows.zip",
+  "downloadUrl": "https://constexpr.org/innoextract/files/innoextract-1.9-windows.zip",
+  "sha256Pinned": false,
+  "sha256Observed": "6989342c9b026a00a72a38f23b62a8e6a22cc5de69805cf47d68ac2fec993065",
+  "md5Verified": true,
+  "preparedUtc": "2026-11-25T19:07:14.9323001Z"
+}
