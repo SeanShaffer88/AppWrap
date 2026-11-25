@@ -99,8 +99,8 @@ public static class CliArguments
                 Value("launch", "Launch .exe relative to the source folder (default: the folder's sole .exe)."),
                 Value("output", "Destination: a file for installer/portable, a folder for both/paf (default: the Desktop, with the suggested filename)."),
                 Value("filename-style", "Name-Version-Setup (default) | Name_Setup | Name-Setup-Version."),
-                Value("icon", "Icon .ico for portable and PAF packages."),
-                Value("sidebar", "Sidebar image for portable packages."),
+                Value("icon", "Icon image for portable and PAF packages (default: the --project project's iconPath)."),
+                Value("sidebar", "Sidebar image for portable packages (default: the --project project's sidebarImagePath)."),
                 Flag("start-menu", "Offer a Start Menu shortcut (installer; default on)."),
                 Flag("no-start-menu", "Do not offer a Start Menu shortcut."),
                 Flag("desktop", "Offer a Desktop shortcut (installer; default off)."),
@@ -176,9 +176,9 @@ public static class CliArguments
             "The tested app runs once in a throwaway sandbox with a redirected profile; writes to the",
             "profile are portability violations. A failing verdict exits 4; the report is still written.",
         ],
-        ["config list"] = ["Documents: appinfo, launcher, installer."],
-        ["config get"] = ["Documents: appinfo, launcher, installer."],
-        ["config set"] = ["Documents: appinfo, launcher, installer. Unknown documents, sections and keys are usage errors listing the valid choices."],
+        ["config list"] = ["Documents: appinfo, launcher, installer, project. The project document holds the project's image properties (section Images, keys IconPath and SidebarImagePath) from appwrap.project.json."],
+        ["config get"] = ["Documents: appinfo, launcher, installer, project (section Images, keys IconPath and SidebarImagePath)."],
+        ["config set"] = ["Documents: appinfo, launcher, installer, project (section Images, keys IconPath and SidebarImagePath; the value is an image path, stored project-relative when the file lives in the project). Unknown documents, sections and keys are usage errors listing the valid choices."],
     };
 
     public static CliInvocation Parse(string[] args)
@@ -303,11 +303,17 @@ public sealed record BuildCommandOptions(
             invocation.Has("overwrite"));
     }
 
-    /// <summary>Applies project-file defaults under any explicit flags (flags win).</summary>
-    public BuildCommandOptions WithProjectDefaults(string? projectName, string? projectStyle) => this with
+    /// <summary>
+    /// Applies project-file defaults under any explicit flags (flags win). The
+    /// project image arguments arrive already resolved to absolute paths against
+    /// the project root by the router, so they compose with flag paths directly.
+    /// </summary>
+    public BuildCommandOptions WithProjectDefaults(string? projectName, string? projectStyle, string? projectIcon = null, string? projectSidebar = null) => this with
     {
         Name = Name ?? (string.IsNullOrWhiteSpace(projectName) ? null : projectName),
         FilenameStyle = FilenameStyle ?? (projectStyle is not null && IsStyleWord(projectStyle) ? projectStyle : null),
+        Icon = Icon ?? projectIcon,
+        Sidebar = Sidebar ?? projectSidebar,
     };
 
     /// <summary>The effective filename style: the given word, or the wizard default.</summary>

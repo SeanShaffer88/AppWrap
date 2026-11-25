@@ -69,6 +69,27 @@ consumer requires it:
   because AppWrap's packaging builder compiles the folder on that machine in
   the same build.
 
+One wizard choice is package content in **neither** portable output: the
+sidebar image. It is not a file in the package and not an `installer.ini`
+key. In the compiled flow, AppWrap substitutes the chosen image into its
+private per-build clone of the packaging backend
+(`App/installer/PortableApps.comInstaller.bmp`, converted to the 164×314
+24-bit BMP the generated installer script names as its
+`MUI_WELCOMEFINISHPAGE_BITMAP`) before its renamed builder runs, and the
+builder's stock copy step propagates that backend file into the compile.
+The official installer offers no package-side equivalent: the upstream
+wizard (`InstallerWizard.nsi`, Installer 3.9.24) deletes any
+`Other/Source/PortableApps.comInstaller.bmp` found in the package folder
+and copies its own installation's `App/installer` files in before
+compiling, the full set of `installer.ini` keys it reads contains no
+graphics key, and the header bitmaps it does place in the package are
+generated from the app icon, not supplied as files. A PAF Package therefore
+never carries a sidebar image — whoever compiles the folder gets the
+sidebar of their own installer installation — and AppWrap does not place
+one in the folder, because the official wizard would silently delete it.
+The sidebar remains a project property (schema v3) and applies to the
+compiled portable output only.
+
 The standard **Installer** mode (Inno Setup) is a separate, non-PAF format and
 is out of scope for this document.
 

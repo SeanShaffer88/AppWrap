@@ -9,7 +9,11 @@ console I/O so both are check-covered; `Program.cs` is the only console
 surface.
 
 Commands: `build`, `project validate|info|create`, `config list|get|set`,
-`profile validate`, `test`, `gui`. Every command accepts `--json` (a single
+`profile validate`, `test`, `gui`. The config commands also reach the
+project document (`config … project Images IconPath|SidebarImagePath`) —
+the project's first-class image properties — and `build --project`
+defaults the icon/sidebar from them under any explicit flags. Every
+command accepts `--json` (a single
 envelope object: ok, command, exitCode, result, diagnostics, error) and
 `--verbose` (progress on stderr). Exit codes: 0 success, 2 usage error,
 3 validation failed (nothing written), 4 build/test failure.

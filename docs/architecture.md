@@ -1,116 +1,265 @@
-# AppWrap implementation contract
+# AppWrap architecture
 
-Status: supplied user blueprint is the product specification; this document resolves implementation contracts. Controller approved standard contract. Pinned PortableApps source was downloaded, hash verified and statically extracted; exact modified builder contract below is ready for implementation/real compilation.
+This document describes the architecture as built. Its claims mirror
+`docs/ROADMAP.md` exactly — every implemented item there is described here
+with the same evidence level, and nothing is claimed here that the ROADMAP
+does not claim. Evidence vocabulary (from
+`docs/portable-profiles-qualification.md`): **Verified** (an automated
+check ran and passed in the named environment), **Configuration validated**
+(model, validation and build-boundary logic implemented and check-covered
+on a non-Windows host; no Windows compiler or runtime involved),
+**Unverified** (not exercised in the available environment).
 
-Subsequent user extensions: `docs/ui-polish-contract.md` governs the authorized visual revision; `docs/output-options-contract.md` governs filename presets and paired standard/portable builds. Both keeps backend modes individually typed and does not repurpose a file OutputPath as a directory.
+Historical contract and audit records (`docs/audit-*.md`,
+`docs/*-contract.md`, `docs/product-blueprint.md`) remain in the tree as
+the record of how the design was reached; where they differ from this
+document, this document and the code win.
 
-## Product and dependency map
+## Module map
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| Core | Immutable build input, folder/executable inventory, boundary validation, build result/error model | .NET |
-| Generators | Deterministic standard script and portable metadata/layout plan | Core |
-| Imaging | Required ICO/PNG variants and 24-bit BMP conversion | Windows imaging |
-| Build | Safe staging, bounded child process, cancellation, artifact validation/atomic output publication | Core, Generators, Imaging |
-| Gui | Linear five/seven-step wizard, pickers, indeterminate progress, plain errors/details | Core, Build |
+| `AppWrap.Core` | Immutable build input (`AppWrapInput`), folder/executable inventory, boundary validation (`InputRules`), naming (`PackageNaming`, `WizardPaths`), standard-installer options; `PortableProfiles` (lossless INI model, profile model/codec, capability catalog, validators, typed rule views, operation planner, profile workspace state); `Projects` (PAF project model, store, snapshot, validator, configuration workspace, scaffolder); `TestHarness` (pure snapshot/diff/classify/report model) | .NET only |
+| `AppWrap.Generators` | Deterministic generators: Inno Setup script, portable metadata (`PortableAppsGenerator`), launcher INI, launch shim, upgrade-guard hook and installer settings | Core |
+| `AppWrap.Imaging` | Icon set generation (ICO frames + PNG companions) and the 164×314 24-bit sidebar BMP conversion; bounded image loading | Windows imaging (WPF) |
+| `AppWrap.Build` | Safe staging, bounded child processes, cancellation, transactional artifact publication (files and the PAF folder), the PAL compiler path, the source-bundle writer, the runtime test harness's launching half | Core, Generators, Imaging |
+| `AppWrap.Gui` | The linear wizard (six standard, seven portable/PAF, eight paired steps), the portable-profile workspace, the project configuration panel, the template and test panels, themes | Core, Build |
+| `AppWrap.Cli` | Every wizard/suite capability as commands with a `--json` envelope and a 0/2/3/4 exit-code contract; parse and routing layers free of console I/O | Core, Build |
+| `AppWrap.Tests` | The check suite (also driven on non-Windows hosts through a harness that file-includes the portable checks with an imaging stub) | all of the above |
 
-No module import starts processes, timers, downloads or telemetry. UI uses one build snapshot; editing is disabled during build. No script/configuration editor or advanced mode. Mode selection is introductory, followed by the six standard, seven portable or eight paired questions. Default shortcut values follow this task's explicit blueprint: Start Menu selected, Desktop cleared. Preserve and safely restore window bounds across display/DPI changes.
-
-## Verified toolchain and standard backend
-
-Controller/implementer observed installed .NET SDK 10.0.404 and WindowsDesktop reference packs 10.0.14/15. Target `net10.0-windows` WPF rather than restoring an absent .NET 8 target. Self-contained Windows x64 distribution is the intended artifact; verify actual publish inputs and bundled engine files before claiming standalone operation.
-
-Actual installed compiler: `C:\Program Files\Inno Setup 7\ISCC.exe`; implementer observed `/?` exit 0 with `--quiet`, `--no-ide-signtools`, `--no-signing`. Invoke with those flags plus generated script path as separate `ProcessStartInfo.ArgumentList` entries. No shell, no backend GUI, hidden child window. Compiler exit 0 alone is insufficient: require fresh expected nonempty artifact. No payload or produced installer executes as part of compilation.
-
-Standard generated script contains declarative Setup/Files/Icons/Run/Tasks sections plus a bounded generated Pascal ownership handler for optional startup integration. Stable SHA256-derived AppId based on normalized application name, independent of version, preserves upgrade identity. Install per-user under `{localappdata}\Programs\<stable-safe-id>`, with `PrivilegesRequired=lowest`, `CloseApplications=yes`, `RestartApplications=no`. Offer launch on finish selected by default with `skipifsilent`. No arbitrary code, source includes or user preprocessor expressions. Do not delete user settings on uninstall/upgrade. Stateful payload semantics remain application-specific and cannot be inferred by this builder.
+No module import starts processes, timers, downloads or telemetry. The UI
+uses one build snapshot; editing is disabled during a build. No packaging
+path executes a packaged app, a source installer, a source download action
+or source-supplied custom code.
 
 ## Boundary and process contracts
 
-`AppWrapInput` captures source folder, app name, version, source-relative selected executable, shortcut booleans, output path, mode, optional image paths and optional typed standard completion actions. Normalize version to four numeric ushort components for package metadata; permit one to four entered components. Reject empty names, controls/CR/LF/NUL, invalid Windows file components and path syntax unsupported by the generator. Preserve display names while derive separate safe identifiers/filenames. Literal escaping is backend grammar-specific, distinct from shell-free process arguments: double embedded quotes in Inno quoted strings and escape literal opening braces; reject or safely encode preprocessor-special input before script generation. Never interpolate user values into executable script/preprocessor statements.
+`AppWrapInput` captures source folder, app name, version, source-relative
+selected executable, shortcut booleans, output path, mode, optional image
+paths, optional typed standard completion actions, and an optional portable
+profile. Versions normalize to four numeric components for package metadata
+(one to four entered components accepted). Names reject controls/CR/LF/NUL
+and generator-grammar specials; literal escaping is backend-specific and
+user values are never interpolated into executable script or preprocessor
+statements.
 
-Recursive inventory is bounded and cancellation-aware; preserve relative paths. Reject reparse points/junctions in source and all traversed entries and relevant write ancestors. Validate chosen executable resolves strictly within source; reject traversal, alternate streams and UNC/device paths unless deliberately supported and tested. Source and output must be disjoint: output cannot be source content, source descendant or staging/backend tool file. Source copying takes a fresh bounded snapshot and never follows links. File count, cumulative bytes, path depth and imaging dimensions have documented limits; failures leave source unchanged.
+Recursive inventory is bounded (50,000 entries, 40 nested folders, 20 GB)
+and cancellation-aware. Reparse points/junctions are rejected in the source
+and in relevant write ancestors. The chosen executable must resolve
+strictly within the source; source and output must be disjoint. Source
+copying takes a fresh bounded snapshot (`BuildService.Snapshot`) and never
+follows links; the root `appwrap.project.json` is the one entry it skips.
 
-Build states: Idle -> Validating -> Staging -> Compiling -> Committing -> Succeeded; precommit stages can transition to Cancelled/Failed. One build at a time. Use unique private work directory, no shared predictable filenames. Capture stdout and stderr concurrently, retaining a bounded diagnostic tail with truncation indication. Cancellation and timeout stop only owned process tree and wait for termination before cleanup. Do not conflate cancellation with compiler failure. If process tree termination or cleanup is uncertain, expose evidence rather than claim cleanup.
+Build states: Idle → Validating → Staging → Compiling → Committing →
+Succeeded, with Cancelled/Failed from any pre-commit stage. One build at a
+time, in a unique private work directory. Compiler stdout/stderr are
+captured concurrently into a bounded diagnostic tail. Cancellation and
+timeout stop only the owned process tree. Publication is transactional in
+the handled-failure sense — pending file/folder plus owned backup, identity
+checked before commit, rollback or precise recovery paths on failure — and
+is explicitly **not** an atomic transaction across process termination or
+power loss.
 
-Compile inside owned staging. Copy finished artifact to a unique sibling temporary file at the final destination, flush/close, then atomic replace/move. An existing destination remains intact on failure/cancellation before commit. GUI save picker provides overwrite confirmation. Remove only owned staging/temp paths whose resolved identity is verified; preserve diagnostics in memory for failure disclosure. Ordinary users see friendly next action; raw compiler output appears only under failure details.
+## Implemented areas
 
-## PortableApps contract and blueprint corrections
+### Portable profiles (P0–P6) — Configuration validated
 
-Official format retrieved 2026-11-21 is **3.9 (2026-03-02)**; official Installer page lists **3.9.24**, updated 2026-11-10. Archived Launcher 2.2 documentation uses Format 2.0 and is not the current format authority.
+Typed portable profiles over the lossless `IniDocument` model (comments,
+ordering, repeated keys and line endings round-trip byte-for-byte).
+`CapabilityCatalog` is the pinned-PAL 2.2.9 key/section/token knowledge;
+`PortableProfileValidator` is strict (unknown/deprecated/unsupported keys,
+duplicate singletons, sequential gaps, uncovered registry writes, unsafe
+wait/force-cleanup, broad targets, token rules). Imported profiles never
+grant trust. P2/P3 derive typed launcher rule views and an immutable
+operation plan with cross-rule diagnostics. P4 adds the installer surface:
+guard-owned keys can never be overridden (`GuardSettingOverride`), the
+profile's installer document merges guard-first, and the DownloadFiles,
+CopyLocalFiles, LegacyVersions and plugin/common-files families are typed
+and configuration-checked but blocked (`GuardOrderBlocked`) pending the
+planned `AppWrapPreMutation` gate. P5 is the wizard's profile workspace
+over the same state (`ProfileWorkspaceState`). P6 writes the
+corresponding-source/license bundle under `Other/Source` in PAL packages.
+The real PAL path compiles the root launcher with the pinned, hash-verified
+PAL 2.2.9 / NSIS 2.46.5-Unicode backend (`PalCompiler` re-verifies the
+makensis hash before running it; failure is fatal, never a shim fallback).
+Backend preparation is **Verified** against the pinned hashes; PAL
+compilation, runtime behavior and WPF layout on Windows are **Unverified**.
 
-1. Packaging an arbitrary executable does not make it portable. Mode explanatory text must say the input app must already support portable use; this tool packages it and does not redirect registry/profile writes. Do not claim runtime portability qualification.
-2. Stage the complete raw source tree under `App\Payload`, preserving every source-relative sibling relationship. Compile a genuine small root launcher `<safe-id>Portable.exe`; metadata `[Control] Start` names that root launcher. It launches the actual selected `App\Payload\<source-relative-main>` with working directory set to that executable's parent. This is required by actual upstream installer inclusion rules, not the format's broader metadata grammar. Do not copy a lone executable, use a sentinel EXE or omit payload resources. Existing already-structured portable inputs need separate verified treatment if their Data layout is retained; nesting an existing portable package can relocate its Data beneath App and change upgrade semantics. Do not claim generic settings preservation without that evidence.
-3. `[Version]` is required: `PackageVersion=x.x.x.x`, `DisplayVersion=<input>`. `[Format] Type=PortableApps.comFormat`, `Version=3.9`. Core Details include Name, AppID, Publisher, Homepage, Category, Description and Language. Never fabricate publisher endorsement, homepage, redistribution rights or positive license flags. Existing valid license metadata may be preserved by safe parsing. For absent provenance, conservative false flags are metadata placeholders, not legal determinations; record unknowns. Public distribution requires actual rights review.
-4. Required icons now include `appicon.ico` with 16/32/48 8-bit and 32-bit entries plus 256px PNG-compressed entry; companions 16/32/**75**/128/256 PNG. Blueprint omitted the 75px image. Generate complete set for supplied image and an original neutral fallback. Do not pretend generic fallback is upstream branding or reuse trademark artwork without permission.
-5. Official builder supports passing package directory; expected generated package appears beside it. No verified quiet/headless flag in public docs. Inspect pinned builder source and validate actual invocation before selecting flags. Do not run the built installer or payload on the host merely to verify compilation.
-6. Public format docs document only three installer custom-code macros, not a sidebar-image key. Do not invent an INI key or assume a late `MUI_WELCOMEFINISHPAGE_BITMAP` define works. Sidebar implementation requires exact source-hook/order proof and a real build. Unsupported custom image selection cannot silently report success.
-7. Source `Other\Source\PortableApps.comInstallerCustom.nsh`, plugin hooks and configuration can execute build-time code. Never compile copied source hooks. Either safely reject such sources or neutralize only in owned staging and explain unsupported customization. Generate allowlisted metadata; no downloads, optional custom install actions or source-supplied config directives.
+### Project model, editors, templates (Suite Phases 1, 2, 5) — Configuration validated
 
-### Pinned-source findings and minimal modified builder
+`appwrap.project.json` (schema v3; forward-only migration chain v1→v2→v3;
+unknown JSON properties preserved verbatim) records name, targeted PAF
+version (3.9), creation time, the deterministic bounded source snapshot
+hash, build-mode history, user choices, and — since v3 — the project's
+icon and sidebar image paths. Stored paths are project-relative in forward
+slashes when the file lives inside the project root and absolute when it
+does not (`ProjectStore.ToStoredPath`/`ResolveStoredPath`). Inference from
+a bare folder reads an existing `App/AppInfo/appinfo.ini` for name/spec and
+picks up the conventional `App/AppInfo/appicon.ico` as the icon; the
+sidebar is never inferred (it has no conventional in-package location —
+see the sidebar contract below). `PafValidator` returns ordered field-level
+diagnostics for the layout, the three INI documents, custom code, and the
+project image properties (missing file, escaping relative path,
+unsupported picture type, 32 MB bound).
 
-The official 3.9.24 package downloaded to `work/backend-research/PortableApps.comInstaller_3.9.24.paf.exe`, hash matched the published hash, and static extraction with `C:\Program Files\FileBot\lib\7z.exe` returned exit 0. Source root: `work/backend-research/extracted`. No downloaded installer executed. Source `Other/Source/InstallerWizard.nsi` and bundled `App/nsis/makensis.exe` provide a reproducible backend.
+`ProjectConfigWorkspace` is the testable state behind the wizard's
+configuration panel: the project's INI files on disk, parsed losslessly,
+are the single source of truth; guided field edits and raw text edits
+mutate the same documents; validation runs `PafValidator` with the
+in-memory documents overlaid, so unsaved edits face exactly the saved
+project's rules. A fifth panel tab (Project) edits the image properties.
+Advanced mode is a per-project user choice, off by default, and gates only
+direct text editing of the project's own two custom-code files — no
+packaging path reads it. `ProjectScaffolder` writes the blank PAF template
+(placeholder values validate with TODO warnings only) into a new/empty
+folder transactionally; the wrapped-binary template is the inference path
+with its origin recorded. The full contract is `docs/project-model.md`.
 
-Verified source findings: `.onInit` lines 277–290 treats the complete command line as the sole package directory and sets automatic compile; no switch parsing. `OptionsPageShow` lines 310 onward initializes appinfo/installer paths and plugin flag. The content guard at lines 526 onward requires root `*.exe`, more restrictive than the format's root-relative Start. Lines 496–511 delete the package bitmap and copy stock engine files. The generated installer script defines the sidebar at line 173; custom NSH is not included until lines 417 onward, so a late sidebar define cannot work. Wizard uses a nonzero-error flag/log but does not set a reliable process exit code. Success automatic mode skips the final page; failure can leave a visible GUI.
+### Outputs and the pinned PortableApps toolchain — Configuration validated
 
-Controller relayed explicit user approval to include a patched builder. Implement the smallest wizard-only patch, leaving the actual PortableApps installer code unchanged:
+Four output modes share staging. **Standard** compiles an Inno Setup 7
+script (per-user, stable name-derived identity, `PrivilegesRequired=lowest`,
+generated Pascal only for the typed completion options). **Portable**
+stages the canonical PAF 3.9 tree — complete original folder under
+`App/Payload`, generated `appinfo.ini`/`installer.ini`, a genuine compiled
+root launcher (the basic NSIS shim, or the PAL launcher with a profile) —
+and compiles it with the distinctly renamed silent **AppWrap Packaging
+Builder**, AppWrap's minimal patch of the upstream Installer 3.9.24 wizard
+(the generated-installer script itself is unmodified). **Both** runs
+Standard and Portable from one snapshot with paired publication. **PAF
+Package** leaves the same staged tree as a folder for the official
+installer, differing only where a folder consumer requires it (empty
+`Data/` placeholder; the upgrade-guard helper shipped beside its hook with
+a package-relative address), published by `FolderArtifactPublisher` under
+the same discipline. The compliance statement is `docs/PAF-COMPLIANCE.md`,
+and `ComplianceChecks` pins its matrices to live generator/editor/catalog
+output. Compilation of a PAF folder by the official installer is
+**Unverified**.
 
-- Clearly rename modified builder executable/product/comment identity, retaining origin/copyright and GPL source. Use distinct `AppWrapPackagingBuilder.exe`, not an upstream executable identity.
-- Add NSIS `SilentInstall silent`. On initialization set automatic mode, interactive false, appinfo/installer absolute paths and plugin false directly; silent mode skips the page that normally does this. Accept exactly one package directory argument; missing/invalid directory returns error and quits. Do not pass `/S`, because stock parameter logic interprets all parameters as a directory.
-- Preserve the root executable guard: the genuine generated root launcher satisfies it. Validate actual `[Control] Start` and target before invocation; no relaxed-root guard is needed in the final contract.
-- At the end of the processing Section, set nonzero process error level when the existing error flag is true, zero otherwise. Remove the unexpected-existing-output MessageBox, retaining its diagnostic and error flag. All required icons/help/metadata exist before invocation; no interactive fallback allowed.
-- In a unique per-build cloned backend directory, substitute only `App/installer/PortableApps.comInstaller.bmp` with the generated 164×314 24-bit BMP. Stock copying then propagates the chosen image. Without custom image retain upstream default. No racing global asset replacement, no custom NSH, no installer source patch.
-- Compile this renamed wizard using bundled `App/nsis/makensis.exe /V2 <Other/Source/InstallerWizard.nsi>` with working directory `Other/Source`. Run renamed compiled builder with exactly the staged package directory argument. Read bounded `Data/PortableApps.comInstallerLog.txt` in that private clone. Require nonzero failure contract and actual expected fresh output, test both.
-- Preserve all source-relative payload relationships under `App/Payload` and generate the root launcher described below. Generate `App/AppInfo` metadata and help, preserving the actual complete payload. Do not root-copy a lone executable, introduce a sentinel EXE or silently omit resources.
+Pinned-source findings that shape this design (upstream
+`InstallerWizard.nsi`, Installer 3.9.24, hash-verified before extraction;
+nothing downloaded at build or run time):
 
-Ship corresponding modified source, patch/build recipe, GPL license, complete needed backend notices/provenance and a clear modified attribution. Modified-builder packaging rights differ from the upstream freeware exception; never claim universal redistribution eligibility. Actual source header grants GPL2-or-later; actual generated-installer source has the additional unmodified-installer exception for OSI open-source/freeware and commercial contact condition. Record this limit in product documentation.
+- `.onInit` treats the complete command line as the sole package directory
+  and sets automatic compile; the modified builder therefore takes exactly
+  one package-directory argument, runs silent, and sets a reliable process
+  error level from the wizard's error flag.
+- The content guard requires the root launcher named by `[Control] Start`
+  (AppWrap's patch validates that file instead of any root `*.exe`).
+- The generated installer script defines its sidebar bitmap at line 173
+  (`MUI_WELCOMEFINISHPAGE_BITMAP "PortableApps.comInstaller.bmp"`, resolved
+  beside the script in `Other/Source` at compile time); custom NSH is not
+  included until lines 417 onward, so no late define or INI key can set it.
+- **Sidebar contract:** the wizard deletes any package-side
+  `Other/Source/PortableApps.comInstaller.bmp` (lines 496–511) and copies
+  its own installation's `App/installer` files in before compiling, and the
+  complete set of `installer.ini` keys it reads contains no graphics key.
+  The sidebar is therefore installer-installation state, never package
+  content. AppWrap's compiled flow substitutes the chosen image (164×314
+  24-bit BMP) into its private per-build backend clone at
+  `App/installer/PortableApps.comInstaller.bmp`; without a chosen image the
+  upstream default is retained. A PAF Package carries no sidebar, and the
+  wizard does not offer the sidebar step for that mode.
+- The upgrade guard is coupled to its generated installer settings:
+  `[CheckRunning] CloseEXE=NONE` is emitted only together with the
+  first-party guard hook, which performs the path-scoped graceful close.
+  Payloads carrying `.nsh`/`.nsi` under `Other/Source` are rejected for
+  every portable output.
 
-### Real-compile correction: payload and root launcher
+### Runtime test harness (Suite Phase 4) — Configuration validated
 
-The implementer's real compile exposed an additional contract at upstream generated installer source lines 1794–1800: it requires root `*.exe` and `*.html`, recursively includes `App`, and later includes `Other`; arbitrary root DLLs and resource directories are not copied. Therefore a relaxed wizard root check plus raw root source would either fail or silently omit payload dependencies. The controller approved the corrected complete `App/Payload` staging and real root launcher design. The final installer NSI remains unmodified.
+An explicit, separate action — never part of a build, and the check suite
+asserts no build path references it. The pure Core half snapshots watched
+trees and classifies the diff (package `Data/` writes expected; profile
+writes are violations; temp writes noted); the Build half copies the
+package into a throwaway tree, redirects
+USERPROFILE/APPDATA/LOCALAPPDATA/TEMP into a sandbox, runs the launcher
+once with a graceful-then-force timeout, writes the versioned
+`test-report.json`, and always cleans up. Detection is file-system snapshot
+diffing only: the registry is not observed and no clean-machine guarantee
+is made (`docs/TEST-HARNESS.md`). Real-app runs on Windows are
+**Unverified**.
 
-Compile the root launch shim with the same bundled NSIS compiler. It is original generated AppWrap code, with `Unicode true`, `RequestExecutionLevel user`, silent execution and no elevation, installation, settings migration, cleanup, timers or background monitoring. Construct the target from its own executable directory plus fixed validated source-relative location. Set the child's working directory to the target's containing directory. Use `ExecWait` directly, never a shell. Preserve caller command-line arguments as the raw `GetParameters` string appended after the separately quoted executable path; do not re-tokenize or add arbitrary switches. Return the observed child exit code via `SetErrorLevel`; distinguish launch failure with an actionable nonzero result. Waiting keeps process lifetime observable but does not establish a generic single-instance or portability contract.
+### Command-line interface — Configuration validated
 
-There are two escaping boundaries: generated NSIS literal strings and the Windows child command line. Source path strings must never become `!include`, preprocessor `${...}` or NSIS runtime variable code. Use the compiler's verified literal escaping (`$` handling plus quote encoding) or explicitly reject unsupported characters; verify adversarial dollar/preprocessor/control cases in actual compilation rather than assuming shell-free process launch makes generated script safe. Raw user arguments are runtime data and may contain quotes; forward them without interpreting as script. Keep compile-time paths, script files and payloads in private staging and treat reparse links as invalid.
+`AppWrap.Cli` exposes every wizard/suite capability: `build` (all four
+modes, `--dry-run`, `--overwrite` as the replace-confirmation equivalent),
+`project validate|info|create`, `config list|get|set` over the three INI
+documents plus the `project` document (section `Images`, keys `IconPath` /
+`SidebarImagePath`), `profile validate`, `test`, and `gui`. Precedence for
+build defaults is flag > project > built-in for name, filename style, icon
+and sidebar; completed builds are recorded in the project exactly as the
+wizard records them. Argument parsing and routing perform no console I/O
+and are check-covered; the JSON envelope, config round-trips, profile
+validation and dry-run builds were smoke-run on a non-Windows host. Real
+packaging runs on Windows are **Unverified**. Full reference:
+`docs/CLI.md`.
 
-Verification must inspect the produced package's actual contents, not merely its compiler exit: include a harmless payload with root DLL, nested resources, and nested selected executable, compare all expected file hashes after static extraction, and run only a separately authorized trusted benign shim fixture to check cwd/argv/child exit. Label broader portability and payload-specific Data/settings preservation unverified.
+### Backend provenance — Verified
 
-Published official builder download: `https://download2.portableapps.com/portableapps/PortableApps.comInstaller/PortableApps.comInstaller_3.9.24.paf.exe`; official page SHA256 `7ef6e2758cb578843d767fb5fafdbde8bf872b84f0acd6e64f18afbb05c04f00`. Verify downloaded content before extraction/execution. Record exact backend version, provenance, hash and notices. Pin updates; do not auto-update at runtime. Official current-format release currency policy may require future updates before publishing generated packages.
+Both backends are hash-pinned and prepared locally by committed scripts
+(`tools/Prepare-PalBackend.ps1`, `tools/Prepare-PortableBackend.ps1`);
+provenance files record the pins. The stale `modifiedWizardSha256` pin was
+refreshed from a real PowerShell run of the committed preparation script
+(the script deterministically produces the pinned value from the verified
+official Installer 3.9.24 archive), and v0.2.0-preview shipped with the
+backend passing its provenance check. `tools/Publish-AppWrap.ps1` copies
+all three backends (Inno Setup, PortableApps, PAL) beside the executables —
+`PalCompiler` requires `third_party/pal` beside the exe — and the release
+manifest is built by walking the assembled folder and re-verified entry by
+entry.
 
-## License/distribution evidence
+## Themes
 
-Inno current license permits use and redistribution with notices/addresses retained and modified versions identified; retain exact version's license in bundled distribution. PortableApps official page labels Installer GPL under PortableApps.com EULA and permits FOSS/freeware, with commercial use by contacting PortableApps. Format permission section additionally requires original publisher or express consent for freeware and unmodified official installer. Read included exact EULA/source notices before bundling. Do not assume an arbitrary source app is freeware or open source. AppWrap has no hidden telemetry; the blueprint's funnel instrumentation is deferred unless explicitly designed as local, documented data.
+Five native WPF brush palettes (AppWrap, Catppuccin Mocha, Nord, Gruvbox
+Light, OLED Black) share layout, control behaviour, validation and backend
+orchestration; Windows high-contrast mode uses system colors. Theme choice
+persists in `Data/window.json` alongside window bounds and the preferred
+filename style, starts no process, downloads nothing, and never changes
+generated packages.
 
-### Source obligations and limits of this review
+## Planned (ROADMAP)
 
-Included `Other/Source/InstallerWizard.nsi` grants GPL version 2 or later without the installer-output exception in its header. Included `App/installer/PortableApps.comInstaller.nsi` grants GPL2-or-later and adds an exception for OSI-approved applications/freeware when the installer is unmodified and conforms to the format, with commercial use by contacting PortableApps. These are distinct components: do not replace either notice with a simplified blanket statement.
+- **The `AppWrapPreMutation` gate** — the reviewed earlier-safe point in
+  the generated installer that would unblock the DownloadFiles,
+  CopyLocalFiles, LegacyVersions and plugin/common-files families. Until
+  it exists they stay typed, discoverable, configuration-checked and
+  blocked.
+- **Host runtime fixture qualification** — what only a Windows host can
+  prove: an actual PAL compile and source bundle inside a package, the
+  runtime fixture suite, guard variants, WPF layout at 680×560, official
+  installer compilation of a PAF Package folder, and the test harness
+  against real packaged applications.
 
-Included `Other/Source/License.txt` GPL2 sections 1–3 require preserving notices/disclaimer/license, marking changed files and dates, licensing the modified derived builder under GPL, and providing complete corresponding machine-readable source or a valid section-3 alternative. Choose accompanying exact source plus the actual patch/build scripts, rather than inventing a source offer. Source completeness includes the builder's constituent modules and compilation/installation controls. An external upstream URL alone is not the accompanying-source approach. The independent original AppWrap C#/WPF files can carry MIT notices; keep them separate from the GPL-derived backend and clearly identify the separate licenses. This source review does not establish that every possible combined distribution is merely aggregation.
+## License and distribution obligations
 
-`App/nsis/COPYING` licenses most NSIS components under zlib/libpng, bzip2 separately, and the LZMA module under CPL1 with a linking exception; NSIS is not globally GPL. Preserve the full COPYING and per-plugin notices. CPL3(b)(iv) requires an object-code distribution notice explaining source availability from the distributor; retain/provide the source route for the exact distributed component rather than calling the entire backend source-complete based only on the wizard NSI. Included NSIS tree contains selected plugin C/C++ sources but not a demonstrated complete exact compiler/LZMA source set. Inventory shipped binaries against their licenses/source obligations; retain unknown/unreviewed plugin provenance explicitly until reconciled. Prune unused optional extractors only after real build proves they are unused, or include their notices and corresponding source/offer obligations as applicable. No public release licensing certification is inferred from the upstream binary bundle.
-
-Public page wording, source copyright license, generated-installer exception, trademark/format policy and payload copyright permissions address different matters. The GPL permits modifying/redistributing the builder subject to its conditions; this does not authorize third-party payload redistribution, upstream endorsement, use of every trademark, or blanket commercial-generated-package rights. Provide concise documentation of those distinctions without adding extra wizard questions. Portable mode helper text: "Choose an app that already supports portable use. AppWrap packages it; it does not change where the app saves settings." User-facing workflow stays backend-neutral; detailed attribution/license notices belong in documentation and bundled license files.
-
-## Theme boundary
-
-The user subsequently requested GUI beautification and abandoned TesselGUI conformity. The canonical visual revision is `docs/ui-polish-contract.md`; it governs appearance only and leaves backend contracts intact.
-
-Controller relayed the user's request for alternatives: Original, Catppuccin Mocha, Nord, Gruvbox Light and OLED Black. Implement these as native WPF resource dictionaries for semantic brushes, keeping layout/control behavior, validation and backend orchestration shared. Persist theme choice alongside window state; invalid/missing theme falls back to Original. Theme selection must not start a process, download assets or change generated installers. Original and alternatives must retain visible keyboard focus, selected/disabled/error states and Windows high-contrast fallback. Show mockups for the design changes and check actual resized UI. Palette provenance should cite the controller-verified official sources; do not claim certification by those projects or silently bundle artwork.
+AppWrap's own code is MIT. The modified packaging builder is GPL-2.0-or-later
+derived work: it ships with its exact source, the upstream source, the
+patch, the preparation script and clear modified attribution, distinctly
+named so it never presents as the upstream executable. The generated
+installer script is unmodified upstream and carries its own exception for
+OSI-approved/freeware payloads (commercial use by contacting
+PortableApps.com); the PAL launcher bundle carries the GPL v2 text and
+plugin notices the pinned backend ships, and records what the backend does
+not ship rather than inventing it. NSIS components keep their full COPYING
+and per-plugin notices. None of this grants redistribution rights for a
+packaged application, upstream endorsement, or trademark use; unknown
+license information in a packaged app stays unknown/conservative. AppWrap
+is not endorsed by PortableApps.com. Distribution is a direct-download ZIP
+only — no winget, Scoop or Chocolatey packages (ROADMAP, out of scope).
 
 ## Verification gates
 
-- Meaningful Core/Generators tests: executable discovery, defaults, invalid versions, Unicode, quotes/braces/CRLF/preprocessor injection, containment, reparse points, stable identity, metadata preservation and unknown license fields.
-- Process/output tests: success with expected file, nonzero failure, false success without file, timeout/cancel, old output preservation, log truncation, repeated builds, source unchanged.
-- Imaging: parse actual generated ICO entry count/sizes/depths, decode PNG dimensions and alpha, BMP header 24-bit/dimensions; malformed/huge image rejection.
-- Real standard compiler gate using benign owned sample, output hash/size and static PE architecture evidence. No installer runtime claims.
-- Real official portable builder gate using benign already-portable sample; icon/sidebar custom and skipped cases, expected artifact and metadata. No generic portability claims.
-- GUI: actual wizard navigation for both modes, error recovery, resize/minimum window/keyboard, cancellation, screenshot compared to shown mockup. UI automation is not accessibility certification.
-- Self-contained publish and static package inventory/hash; independent final review of exact diff and completed evidence. Unavailable runtime/clean-machine/upgrade gates reported unperformed.
-
-## Sources
-
-- https://jrsoftware.org/inno-setup/documentation/topic_compilercmdline.htm — compiler invocation and exit codes.
-- https://jrsoftware.org/files/is/license.txt — current license.
-- https://portableapps.com/apps/development/portableapps.com_installer — current release, directory argument, tool license and published hash (native HTTP fallback used after browser retrieval restriction).
-- https://portableapps.com/development/portableapps.com_format — current metadata, icon, layout, custom code, portability and permissions (native HTTP fallback used after web 403).
-- Local selected reference: `C:\Users\Sean Shaffer\Documents\DevTools\resources\github\catalog.md`, AppHost/WinUIHelpers are reference-only, untested here. Existing .NET/WPF/native facilities suffice; importing unverified helpers is unnecessary.
-- Activated skills: `C:\Users\Sean Shaffer\.agents\skills\api-and-interface-design\SKILL.md` (contract first, boundary validation, consistent errors); `C:\Users\Sean Shaffer\.codex\skills\portableapps-packager\SKILL.md` and `references\portableapps-workflow.md` (current official guidance, actual evidence/result levels, no portability claim from compilation).
+- Solution build with warnings as errors (Windows targeting enabled on
+  non-Windows hosts).
+- The full check suite: naming, wizard paths, CLI parsing/routing and
+  precedence, project model/migration/snapshot/validator, configuration
+  workspace, scaffolder, profiles (validator, planner, installer surface,
+  workspace, bundle), PAF package staging, compliance matrices, test
+  harness model and pipeline, batch publication, upgrade guard.
+- On Windows, the suite additionally runs real Inno Setup and packaging
+  builder compiles and static archive extraction checks.
+- Published files are read back and hash-verified; release assets are
+  re-downloaded and hash-checked against the local build.
+- Anything only a Windows host can prove is recorded **Unverified**, never
+  inferred from compilation.

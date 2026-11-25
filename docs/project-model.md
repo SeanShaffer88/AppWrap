@@ -11,7 +11,7 @@ the PAF validator. Implementation: `AppWrap.Core/Projects/`
 
 `appwrap.project.json` sits at the project root (the folder chosen in the wizard).
 It is human-readable, indented JSON, written atomically (temporary file moved into
-place). Current schema version: **2**.
+place). Current schema version: **3**.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -19,10 +19,12 @@ place). Current schema version: **2**.
 | `name` | string | Project name (restored into the wizard on reopen). |
 | `pafSpecVersion` | string | PAF specification version the project targets. Default `3.9` — the version the pinned toolchain implements (PortableAppsGenerator emits `[Format] Version=3.9`; Installer backend is 3.9.24, Launcher is 2.2.9). |
 | `createdUtc` | string (ISO 8601) | When the project was created or inferred. |
+| `iconPath` | string \| null | The project's launcher icon (schema v3). Stored project-relative in forward slashes when the file lives inside the project root, absolute when it does not. Null when no icon has been chosen; packaging then generates the default icon set. Restored into the wizard on reopen; the effective pick of each build is recorded back. |
+| `sidebarImagePath` | string \| null | The project's installer sidebar image (schema v3), stored like `iconPath`. Applies to the compiled portable output only — a PAF Package folder never carries a sidebar (see `docs/PAF-COMPLIANCE.md`). |
 | `sourceSnapshotHash` | string \| null | Deterministic SHA-256 of the source tree (see below); null when no snapshot exists or the tree exceeded the snapshot bounds. |
 | `sourceSnapshotTruncated` | bool | True when the last snapshot stopped at the bounds; the hash is null in that case rather than describing a partial walk. |
 | `buildModeHistory` | array of `{mode, completedUtc}` | One entry per completed build (`Standard` / `PortableApps`), appended by the wizard after a successful build. |
-| `userChoices` | object (string → string) | User configuration choices recorded by the wizard (currently `namingStyle`). |
+| `userChoices` | object (string → string) | User configuration choices recorded by the wizard (`namingStyle`, `advancedMode`, and the creation-time `template` record). |
 
 Properties AppWrap does not model are **preserved verbatim** through a load/save
 round-trip (JSON extension data), so files written by newer tooling never lose data
@@ -34,6 +36,8 @@ when an older build saves them.
 - **v2**: adds `sourceSnapshotHash`, `sourceSnapshotTruncated`, `buildModeHistory`,
   `userChoices` — all defaulted empty/null by the v1→v2 migration; nothing a v1 file
   carried is altered.
+- **v3**: adds `iconPath`, `sidebarImagePath` — both optional and null when absent,
+  so the v2→v3 migration fills nothing in; nothing a v2 file carried is altered.
 
 Migrations are forward-only, one version per step, applied in memory on load and
 persisted on the next save. A file with a schema version newer than the running
@@ -46,7 +50,12 @@ A folder with no `appwrap.project.json` works exactly as before: the wizard infe
 a project (name and targeted PAF version from an existing
 `App/AppInfo/appinfo.ini` when present, otherwise the folder name and the toolchain
 default) and writes the file on first save — which happens before the first build.
-Packaging output for folders that never open the wizard is unchanged.
+Inference also picks up the one image with a conventional in-package location: an
+existing `App/AppInfo/appicon.ico` becomes the project's `iconPath`. The sidebar
+image is never inferred — the official installer keeps its sidebar bitmap in its
+own installation, so projects do not conventionally carry one; it is recorded
+only from an explicit pick. Packaging output for folders that never open the
+wizard is unchanged.
 
 ## Source snapshot
 
@@ -85,7 +94,11 @@ INI parse problems, oversized metadata). Canonical files that are **absent** are
 reported at Info/Warning level, because AppWrap generates them during packaging —
 absence is normal for a plain application folder; broken content is not.
 
-Coverage: canonical layout presence (`App/`, `Data/`, `Other/`); `appinfo.ini`
+Coverage: canonical layout presence (`App/`, `Data/`, `Other/`); the project's
+image properties (`iconPath` / `sidebarImagePath` in the project file itself —
+a referenced file that is missing, escapes the project as a relative path, is
+not a picture type the wizard's picker offers, or exceeds the imaging layer's
+32 MB bound is an error naming the exact property); `appinfo.ini`
 (`[Format]`, `[Details]` incl. the PortableApps.com category list, `[Version]`,
 `[Control]`, `[License]` value shape); `installer.ini` parse health plus the
 guard-owned `[CheckRunning] CloseEXE` note; every launcher INI under
@@ -118,9 +131,14 @@ wizard step once a folder's project is loaded).
 
 ### Editors and the binding model
 
-The panel has four tabs: **App info** (`App/AppInfo/appinfo.ini`), **Launcher**
-(`App/AppInfo/Launcher/<AppID>.ini`), **Installer** (`App/AppInfo/installer.ini`)
-and **Custom code**. Each INI tab offers guided fields for the keys AppWrap
+The panel has five tabs: **App info** (`App/AppInfo/appinfo.ini`), **Launcher**
+(`App/AppInfo/Launcher/<AppID>.ini`), **Installer** (`App/AppInfo/installer.ini`),
+**Project** and **Custom code**. The Project tab edits the project's own
+properties that are not INI content — the icon and sidebar image paths
+(schema v3) — with the same typed/pasted path entry and the validator's
+diagnostics attached to each field; saving persists them in
+`appwrap.project.json` through the same workspace save as the documents.
+Each INI tab offers guided fields for the keys AppWrap
 itself emits and validates, plus the document's full text. The files on disk,
 parsed through the lossless `IniDocument`, are the single source of truth:
 field edits and text edits mutate the same parsed document, so unknown

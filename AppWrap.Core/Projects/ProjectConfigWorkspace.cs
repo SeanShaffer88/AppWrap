@@ -24,6 +24,15 @@ public sealed record ConfigField(
 public sealed record ConfigFieldState(ConfigField Field, string? Value, bool Present, IReadOnlyList<PafDiagnostic> Diagnostics);
 
 /// <summary>
+/// One of the project's two first-class image properties (schema v3): its JSON
+/// key, editor label, stored path form (project-relative when the file lives in
+/// the project, absolute otherwise), the resolved absolute path, whether that
+/// file currently exists, and the validator diagnostics attached to the field.
+/// </summary>
+public sealed record ProjectImageFieldState(
+    string Key, string Label, string? StoredPath, string? ResolvedPath, bool Exists, IReadOnlyList<PafDiagnostic> Diagnostics);
+
+/// <summary>
 /// A custom-code file as the editor sees it. <see cref="Editable"/> is true only
 /// while Advanced mode is on; the text is the file's current content (empty when
 /// the file does not exist yet).
@@ -71,12 +80,16 @@ public sealed class ProjectConfigWorkspace
     private readonly Dictionary<ProjectDocumentKind, IniDocument> _documents = new();
     private readonly Dictionary<ProjectDocumentKind, string> _originalTexts = new();
     private readonly Dictionary<ProjectDocumentKind, string> _displayPaths = new();
+    private string? _originalIconPath;
+    private string? _originalSidebarImagePath;
 
     private ProjectConfigWorkspace(string root, PafProject project, bool inferred)
     {
         Root = root;
         Project = project;
         ProjectWasInferred = inferred;
+        _originalIconPath = project.IconPath;
+        _originalSidebarImagePath = project.SidebarImagePath;
         Reload();
     }
 
@@ -114,6 +127,69 @@ public sealed class ProjectConfigWorkspace
 
     /// <summary>The AppID declared by the current (in-memory) appinfo document, when one is set.</summary>
     public string? AppId => DocumentFor(ProjectDocumentKind.AppInfo).GetValue("Details", "AppID") is { Length: > 0 } id ? id : null;
+
+    /// <summary>The JSON key of the project's icon property in appwrap.project.json.</summary>
+    public const string IconPathKey = "iconPath";
+
+    /// <summary>The JSON key of the project's sidebar-image property in appwrap.project.json.</summary>
+    public const string SidebarImagePathKey = "sidebarImagePath";
+
+    /// <summary>
+    /// The project's icon, in stored form (see <see cref="ProjectStore.ToStoredPath"/>).
+    /// Setting accepts any path form — a file inside the project is stored
+    /// project-relative, one outside is stored absolute — and null/empty clears it.
+    /// </summary>
+    public string? IconPath
+    {
+        get => Project.IconPath;
+        set => Project.IconPath = NormalizeImagePath(value);
+    }
+
+    /// <summary>The project's sidebar image, in stored form; see <see cref="IconPath"/>.</summary>
+    public string? SidebarImagePath
+    {
+        get => Project.SidebarImagePath;
+        set => Project.SidebarImagePath = NormalizeImagePath(value);
+    }
+
+    private string? NormalizeImagePath(string? value)
+    {
+        var trimmed = value?.Trim().Trim('"');
+        if (string.IsNullOrEmpty(trimmed)) return null;
+        // A relative entry is read against the project root, never the process
+        // working directory, then stored in the canonical stored form.
+        var absolute = Path.IsPathRooted(trimmed)
+            ? trimmed
+            : Path.Combine(Root, trimmed.Replace('/', Path.DirectorySeparatorChar));
+        return ProjectStore.ToStoredPath(Root, absolute);
+    }
+
+    /// <summary>
+    /// Both image properties with their resolved paths, existence and the
+    /// validator diagnostics attached to exactly each property, in editor order.
+    /// </summary>
+    public IReadOnlyList<ProjectImageFieldState> ImageFieldStates()
+    {
+        var diagnostics = ValidateAll();
+        ProjectImageFieldState State(string key, string label, string? stored)
+        {
+            var resolved = stored is null ? null : ProjectStore.ResolveStoredPath(Root, stored);
+            return new ProjectImageFieldState(key, label, stored, resolved,
+                resolved is not null && File.Exists(resolved),
+                diagnostics.Where(d => string.Equals(d.FilePath, ProjectStore.FileName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(d.Key, key, StringComparison.Ordinal)).ToList());
+        }
+        return
+        [
+            State(IconPathKey, "App icon", Project.IconPath),
+            State(SidebarImagePathKey, "Sidebar image", Project.SidebarImagePath),
+        ];
+    }
+
+    /// <summary>True when an image property differs from its value at load/last save.</summary>
+    public bool ImagesDirty =>
+        !string.Equals(Project.IconPath, _originalIconPath, StringComparison.Ordinal)
+        || !string.Equals(Project.SidebarImagePath, _originalSidebarImagePath, StringComparison.Ordinal);
 
     /// <summary>The project-relative path (forward slashes) of a configuration document.</summary>
     public string DisplayPathFor(ProjectDocumentKind kind) => _displayPaths[kind];
@@ -176,7 +252,7 @@ public sealed class ProjectConfigWorkspace
     /// <summary>True when a document's current text differs from what is on disk (or would create its file).</summary>
     public bool IsDirty(ProjectDocumentKind kind) => !string.Equals(GetDocumentText(kind), _originalTexts[kind], StringComparison.Ordinal);
 
-    public bool HasUnsavedChanges => Enum.GetValues<ProjectDocumentKind>().Any(IsDirty);
+    public bool HasUnsavedChanges => Enum.GetValues<ProjectDocumentKind>().Any(IsDirty) || ImagesDirty;
 
     /// <summary>
     /// Runs <see cref="PafValidator"/> over the whole project with the current
@@ -220,6 +296,8 @@ public sealed class ProjectConfigWorkspace
         Project.SourceSnapshotHash = snapshot.Sha256;
         Project.SourceSnapshotTruncated = snapshot.Truncated;
         ProjectStore.Save(Root, Project);
+        _originalIconPath = Project.IconPath;
+        _originalSidebarImagePath = Project.SidebarImagePath;
     }
 
     /// <summary>Discards in-memory edits and re-reads every document from disk.</summary>

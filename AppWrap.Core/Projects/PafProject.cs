@@ -8,21 +8,42 @@ namespace AppWrap.Core.Projects;
 public sealed record BuildModeRecord(string Mode, DateTimeOffset CompletedUtc);
 
 /// <summary>
-/// The persisted AppWrap project model (appwrap.project.json, schema version 2).
+/// The persisted AppWrap project model (appwrap.project.json, schema version 3).
 /// This is the durable, human-readable record of a PortableApps project: which PAF
 /// specification it targets, a deterministic snapshot hash of its source tree, the
-/// history of build modes completed against it, and the user's configuration choices.
+/// history of build modes completed against it, the user's configuration choices,
+/// and the project's icon and sidebar images (first-class properties since v3, so
+/// a reopened project restores the same pictures the wizard last used).
 /// Unknown JSON properties are preserved verbatim through a load/save round-trip via
 /// <see cref="ExtensionData"/> so newer or older tooling never silently drops data.
 /// </summary>
 public sealed class PafProject
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string Name { get; set; } = "";
     public string PafSpecVersion { get; set; } = PafLayout.DefaultPafSpecVersion;
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// The project's launcher icon, as a stored path: project-relative in
+    /// forward-slash form when the file lives inside the project root, absolute
+    /// when the chosen file lives outside it (the record stays truthful rather
+    /// than silently copying user files into the project). Null when no icon
+    /// has been chosen; packaging then generates the default icon set.
+    /// Resolve with <see cref="ProjectStore.ResolveStoredPath"/>.
+    /// </summary>
+    public string? IconPath { get; set; }
+
+    /// <summary>
+    /// The project's installer sidebar image, stored like <see cref="IconPath"/>.
+    /// Null when none has been chosen. The sidebar applies to the compiled
+    /// portable output only: the official PortableApps.com Installer has no
+    /// package-side sidebar concept (see docs/PAF-COMPLIANCE.md), so a PAF
+    /// Package folder never carries it.
+    /// </summary>
+    public string? SidebarImagePath { get; set; }
 
     /// <summary>SHA-256 of the source tree snapshot, or null when no snapshot has been taken (or the tree exceeded the snapshot bounds).</summary>
     public string? SourceSnapshotHash { get; set; }
@@ -95,6 +116,7 @@ internal static class ProjectMigrator
             switch (version)
             {
                 case 1: Migrate1To2(root); version = 2; break;
+                case 2: Migrate2To3(root); version = 3; break;
                 default: throw new UserInputException($"No migration exists from project schema version {version}.");
             }
             root["schemaVersion"] = version;
@@ -113,5 +135,15 @@ internal static class ProjectMigrator
         if (!root.ContainsKey("sourceSnapshotTruncated")) root["sourceSnapshotTruncated"] = false;
         if (!root.ContainsKey("buildModeHistory")) root["buildModeHistory"] = new JsonArray();
         if (!root.ContainsKey("userChoices")) root["userChoices"] = new JsonObject();
+    }
+
+    /// <summary>
+    /// v3 adds iconPath and sidebarImagePath, both optional and null when absent —
+    /// a v2 document carries no image choices, so there is nothing to fill in and
+    /// nothing a v2 file carried is changed.
+    /// </summary>
+    private static void Migrate2To3(JsonObject root)
+    {
+        // iconPath / sidebarImagePath stay absent (deserialize as null) until chosen.
     }
 }

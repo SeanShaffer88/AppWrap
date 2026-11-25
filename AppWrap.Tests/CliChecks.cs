@@ -61,6 +61,13 @@ internal static class CliChecks
         var badProjectStyle = BuildCommandOptions.FromInvocation(CliArguments.Parse(["build", "--source", "X"]))
             .WithProjectDefaults(null, "NotAStyle");
         check("cli invalid stored style ignored", badProjectStyle.Style == PackageNamingStyle.NameVersionSetup && badProjectStyle.Name == null);
+        var imageDefaults = BuildCommandOptions.FromInvocation(CliArguments.Parse(["build", "--source", "X"]))
+            .WithProjectDefaults(null, null, "C:\\Proj\\icon.ico", "C:\\Proj\\side.bmp");
+        check("cli project supplies image defaults", imageDefaults.Icon == "C:\\Proj\\icon.ico" && imageDefaults.Sidebar == "C:\\Proj\\side.bmp");
+        var imageFlagsWin = BuildCommandOptions.FromInvocation(CliArguments.Parse(
+                ["build", "--source", "X", "--icon", "F.ico", "--sidebar", "S.bmp"]))
+            .WithProjectDefaults(null, null, "C:\\Proj\\icon.ico", "C:\\Proj\\side.bmp");
+        check("cli image flags override project", imageFlagsWin.Icon == "F.ico" && imageFlagsWin.Sidebar == "S.bmp");
 
         // --- Router against a scaffolded fixture project -------------------
         var environment = new CliEnvironment(evidence, Path.Combine(evidence, "cli-state"), "test");
@@ -99,6 +106,27 @@ internal static class CliChecks
         check("cli config unknown key is usage", unknownKey.ExitCode == 2 && (unknownKey.Error?.Contains("Name") ?? false));
         var badBoolean = await CommandRouter.ExecuteAsync(CliArguments.Parse(["config", "set", fixture, "appinfo", "License", "Shareable", "maybe"]), environment, CancellationToken.None);
         check("cli config boolean validated", badBoolean.ExitCode == 3);
+
+        // --- Config: the project document's image properties ------------------
+        var artDir = Path.Combine(fixture, "art");
+        Directory.CreateDirectory(artDir);
+        var iconFile = Path.Combine(artDir, "icon.png");
+        File.WriteAllText(iconFile, "fixture png bytes");
+        var listProject = await CommandRouter.ExecuteAsync(CliArguments.Parse(["config", "list", fixture, "project"]), environment, CancellationToken.None);
+        check("cli config list project document", listProject.ExitCode == 0 && listProject.Data!["fields"] is System.Text.Json.Nodes.JsonArray { Count: 2 });
+        var setIcon = await CommandRouter.ExecuteAsync(CliArguments.Parse(["config", "set", fixture, "project", "Images", "IconPath", iconFile]), environment, CancellationToken.None);
+        check("cli config set project icon stores relative", setIcon.ExitCode == 0 && setIcon.Data!["value"]!.GetValue<string>() == "art/icon.png");
+        var getIcon = await CommandRouter.ExecuteAsync(CliArguments.Parse(["config", "get", fixture, "project", "Images", "IconPath"]), environment, CancellationToken.None);
+        check("cli config get project icon", getIcon.ExitCode == 0 && getIcon.Data!["value"]!.GetValue<string>() == "art/icon.png"
+            && getIcon.Data!["resolved"]!.GetValue<string>() == Path.GetFullPath(iconFile));
+        check("cli config project icon persisted", ProjectStore.Load(fixture)?.IconPath == "art/icon.png");
+        var infoWithIcon = await CommandRouter.ExecuteAsync(CliArguments.Parse(["project", "info", fixture]), environment, CancellationToken.None);
+        check("cli project info shows icon", infoWithIcon.ExitCode == 0
+            && infoWithIcon.Data!["icon"]!["path"]!.GetValue<string>() == "art/icon.png"
+            && infoWithIcon.Data["icon"]!["exists"]!.GetValue<bool>()
+            && infoWithIcon.Data["sidebar"]!["path"] is null);
+        var unknownImageKey = await CommandRouter.ExecuteAsync(CliArguments.Parse(["config", "set", fixture, "project", "Images", "BannerPath", "x.png"]), environment, CancellationToken.None);
+        check("cli config unknown project key is usage", unknownImageKey.ExitCode == 2 && (unknownImageKey.Error?.Contains("iconPath") ?? false));
 
         // --- Profile validation ----------------------------------------------
         var goodProfile = Path.Combine(evidence, "good-profile.ini");

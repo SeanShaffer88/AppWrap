@@ -85,15 +85,15 @@ appwrap build --source <folder> [options]
 | `--launch <relative exe>` | Launch executable inside the source folder. Default: the folder's sole `.exe`; if there are several, the command fails and lists them. |
 | `--output <path>` | Destination. For `installer`/`portable`: the full package file path. For `both`: a folder; both suggested filenames are written into it. For `paf`: a folder; the package folder (named after the app's AppID) is created inside it. Default: the Desktop folder with the suggested filename/folder. |
 | `--filename-style <style>` | `Name-Version-Setup` (default), `Name_Setup`, or `Name-Setup-Version` (the enum names `NameVersionSetup`, `NameOnly`, `NameSetupVersion` are also accepted). |
-| `--icon <file.ico>` | Launcher icon for portable and PAF packages (ignored for installer, as in the wizard). |
-| `--sidebar <image>` | Sidebar image for portable packages. |
+| `--icon <image>` | Launcher icon for portable and PAF packages (ignored for installer, as in the wizard). Default: the `--project` project's `iconPath`, resolved against the project root. |
+| `--sidebar <image>` | Sidebar image for portable packages (never for PAF Package — the official installer has no package-side sidebar; see `docs/PAF-COMPLIANCE.md`). Default: the `--project` project's `sidebarImagePath`. |
 | `--start-menu` / `--no-start-menu` | Offer a Start Menu shortcut in the installer. Default on. |
 | `--desktop` / `--no-desktop` | Offer a Desktop shortcut in the installer. Default off. |
 | `--run-after` / `--no-run-after` | Offer to launch the app after install. Default on. |
 | `--startup` | Offer Start with Windows after install. Default off. |
 | `--website <url>` | Developer website offered after install (absolute http/https URL). |
 | `--profile <file>` | Portable profile for portable modes: a `.json` profile as saved by the wizard, or a launcher `.ini` (treated as the profile's launcher document, PAL kind). Imported under the wizard's trust rules — imports never grant trust. A profile with validation errors stops the build with exit 3 before anything is written. |
-| `--project <file-or-folder>` | An existing `appwrap.project.json` (or its folder). Supplies the default name and filename style (explicit flags override both) and records each completed build in the project, as the wizard does. |
+| `--project <file-or-folder>` | An existing `appwrap.project.json` (or its folder). Supplies the default name, filename style, icon and sidebar image (explicit flags override all of them) and records each completed build — including the effective image picks — in the project, as the wizard does. |
 | `--overwrite` | Replace existing output files / PAF package folder. Without it, an existing destination is an error (exit 3) — the CLI's equivalent of the wizard's replace confirmation. |
 
 Human output: one `Built …` line per output with path, size and SHA-256.
@@ -133,8 +133,10 @@ Summarizes the stored project, or the project inferred for a bare folder
 (inference does not write the file). JSON `result`:
 
 ```json
-{ "root", "inferred": false, "name", "pafSpecVersion", "schemaVersion": 2,
+{ "root", "inferred": false, "name", "pafSpecVersion", "schemaVersion": 3,
   "createdUtc", "sourceSnapshotHash", "sourceSnapshotTruncated": false,
+  "icon": { "path": "App/AppInfo/appicon.ico", "resolved": "C:\\Apps\\…\\App\\AppInfo\\appicon.ico", "exists": true },
+  "sidebar": { "path": null, "resolved": null, "exists": false },
   "buildHistory": [ { "mode": "PortableApps", "completedUtc" } ],
   "userChoices": { } }
 ```
@@ -159,7 +161,14 @@ plus the fresh project's diagnostics in the envelope. For `wrapped`:
 Operates on a project folder's three INI documents through the Phase 2
 configuration workspace (the lossless INI model; unknown sections, keys,
 comments and ordering survive every edit; saves are atomic and refresh the
-project snapshot). Documents: `appinfo`, `launcher`, `installer`.
+project snapshot). Documents: `appinfo`, `launcher`, `installer`, and
+`project` — the project's own properties in `appwrap.project.json`, which
+has a single section, `Images`, with two path fields: `IconPath` and
+`SidebarImagePath`. For the project document, `list` reports the stored
+path (project-relative when the file lives in the project), the resolved
+absolute path and whether the file exists; `get` prints the stored path;
+`set` takes an image path (relative paths resolve against the project
+root) and saves the project file through the same workspace save.
 
 ```
 appwrap config list <folder> [document]
@@ -167,7 +176,7 @@ appwrap config get <folder> <document> <section> <key>
 appwrap config set <folder> <document> <section> <key> <value>
 ```
 
-- `list` without a document lists the three documents with their paths and
+- `list` without a document lists the four documents with their paths and
   field counts. With a document, it lists every guided field with its
   current value (`(not set)` when absent).
 - `get` prints the value, or `(not set)` for a known field with no value.

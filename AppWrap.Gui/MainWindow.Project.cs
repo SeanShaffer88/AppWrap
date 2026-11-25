@@ -30,6 +30,13 @@ public partial class MainWindow
         if (loaded.Project.UserChoices.TryGetValue("namingStyle", out var styleName)
             && Enum.TryParse<PackageNamingStyle>(styleName, out var style) && Enum.IsDefined(style))
             namingStyle = style;
+        // The project's first-class image properties restore the wizard's picks;
+        // a referenced file that has gone missing is left in place so build
+        // validation reports it instead of silently dropping the choice.
+        if (!string.IsNullOrWhiteSpace(loaded.Project.IconPath))
+            icon = ProjectStore.ResolveStoredPath(source, loaded.Project.IconPath);
+        if (!string.IsNullOrWhiteSpace(loaded.Project.SidebarImagePath))
+            sidebar = ProjectStore.ResolveStoredPath(source, loaded.Project.SidebarImagePath);
     }
 
     private async Task<string?> SaveProjectBeforeBuildAsync()
@@ -39,6 +46,11 @@ public partial class MainWindow
         var project = loaded.Project;
         project.Name = name.Trim();
         project.UserChoices["namingStyle"] = namingStyle.ToString();
+        // The wizard's current image picks become the project's properties, the
+        // same way the filename style is recorded; clearing a pick clears the
+        // property.
+        project.IconPath = icon is null ? null : ProjectStore.ToStoredPath(source, icon);
+        project.SidebarImagePath = sidebar is null ? null : ProjectStore.ToStoredPath(source, sidebar);
         try
         {
             await Task.Run(() =>

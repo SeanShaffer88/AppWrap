@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -16,7 +17,7 @@ public partial class MainWindow
     // blocking navigation. Advanced mode (off by default, persisted per project)
     // only unlocks direct text editing of the two custom-code files; packaging
     // behaviour is untouched by anything on this panel.
-    private enum ConfigTab { AppInfo, Launcher, Installer, CustomCode }
+    private enum ConfigTab { AppInfo, Launcher, Installer, Project, CustomCode }
 
     private ProjectConfigWorkspace? configWorkspace;
     private bool configOpen;
@@ -27,7 +28,7 @@ public partial class MainWindow
     private TextBox? configDiagAll;
 
     private static readonly (string Label, ConfigTab Tab)[] ConfigTabs =
-        [("App info", ConfigTab.AppInfo), ("Launcher", ConfigTab.Launcher), ("Installer", ConfigTab.Installer), ("Custom code", ConfigTab.CustomCode)];
+        [("App info", ConfigTab.AppInfo), ("Launcher", ConfigTab.Launcher), ("Installer", ConfigTab.Installer), ("Project", ConfigTab.Project), ("Custom code", ConfigTab.CustomCode)];
 
     private static ProjectDocumentKind DocumentOf(ConfigTab tab) => tab switch
     {
@@ -110,6 +111,7 @@ public partial class MainWindow
         panel.Children.Add(warning);
 
         if (configTab == ConfigTab.CustomCode) RenderConfigCustomCode(panel, workspace);
+        else if (configTab == ConfigTab.Project) RenderConfigImages(panel, workspace);
         else
         {
             RenderConfigFields(panel, workspace, DocumentOf(configTab));
@@ -212,6 +214,96 @@ public partial class MainWindow
         var required = new TextBlock { Text = "* required by the PortableApps.com format checks.", FontSize = 11, Margin = new(0, 0, 0, 4) };
         required.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
         panel.Children.Add(required);
+    }
+
+    /// <summary>
+    /// The Project tab: the project's first-class icon and sidebar image
+    /// properties (appwrap.project.json, schema v3). Paths can be typed or
+    /// pasted; a file inside the project is stored project-relative, one
+    /// outside is stored absolute. The wizard's icon/sidebar steps and these
+    /// fields are two views of the same properties: reopening the project
+    /// restores the wizard picks from here, and a build records the wizard's
+    /// picks back here.
+    /// </summary>
+    private void RenderConfigImages(StackPanel panel, ProjectConfigWorkspace workspace)
+    {
+        var intro = new TextBlock
+        {
+            Text = "These pictures belong to the project and are used by its builds. The sidebar image applies to the compiled portable package only — a PAF Package folder has no sidebar (the official installer keeps its sidebar in its own installation).",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new(0, 0, 0, 8),
+        };
+        intro.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+        panel.Children.Add(intro);
+        foreach (var state in workspace.ImageFieldStates())
+        {
+            var row = new Grid { Margin = new(0, 0, 0, 5) };
+            row.ColumnDefinitions.Add(new() { Width = new GridLength(190) });
+            row.ColumnDefinitions.Add(new());
+            row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var label = new TextBlock
+            {
+                Text = state.Label,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = "appwrap.project.json — " + state.Key,
+            };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+            row.Children.Add(label);
+            var box = Identify(new TextBox
+            {
+                Text = state.ResolvedPath ?? "",
+                FontSize = 12,
+                MinHeight = 28,
+                Padding = new(8, 3, 8, 3),
+                ToolTip = state.StoredPath is null ? "No picture chosen; the default is used." : "Stored in the project file as: " + state.StoredPath,
+            }, "ConfigProjectImage" + state.Key);
+            var key = state.Key;
+            box.LostFocus += (_, _) =>
+            {
+                var text = box.Text.Trim();
+                // Compare in stored form; the workspace setter normalizes the
+                // same way (relative entries resolve against the project root).
+                string? candidate = text.Length == 0 ? null : ProjectStore.ToStoredPath(workspace.Root,
+                    Path.IsPathRooted(text) ? text : Path.GetFullPath(Path.Combine(workspace.Root, text.Replace('/', Path.DirectorySeparatorChar))));
+                var current = key == ProjectConfigWorkspace.IconPathKey ? workspace.IconPath : workspace.SidebarImagePath;
+                if (!string.Equals(candidate, current, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (key == ProjectConfigWorkspace.IconPathKey) workspace.IconPath = text.Length == 0 ? null : text;
+                    else workspace.SidebarImagePath = text.Length == 0 ? null : text;
+                    Render();
+                }
+            };
+            Grid.SetColumn(box, 1); row.Children.Add(box);
+            var clear = SmallButton("Clear", "ConfigProjectImageClear" + state.Key);
+            clear.IsEnabled = state.StoredPath is not null;
+            clear.Margin = new(6, 0, 0, 0);
+            clear.Click += (_, _) =>
+            {
+                if (key == ProjectConfigWorkspace.IconPathKey) workspace.IconPath = null;
+                else workspace.SidebarImagePath = null;
+                Render();
+            };
+            Grid.SetColumn(clear, 2); row.Children.Add(clear);
+            panel.Children.Add(row);
+            var captionText = state.StoredPath is null
+                ? "Not set — builds use the default picture."
+                : state.Exists
+                    ? "Stored as " + state.StoredPath
+                    : "Stored as " + state.StoredPath + " — the file no longer exists.";
+            var caption = new TextBlock
+            {
+                Text = state.Diagnostics.Count > 0 ? state.Diagnostics[0].Message : captionText,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new(190, -3, 0, 5),
+            };
+            caption.SetResourceReference(TextBlock.ForegroundProperty,
+                state.Diagnostics.Any(d => d.Severity == PafDiagnosticSeverity.Error) ? "Error" : "Muted");
+            panel.Children.Add(caption);
+        }
     }
 
     private void RenderConfigText(StackPanel panel, ProjectConfigWorkspace workspace, ProjectDocumentKind kind)

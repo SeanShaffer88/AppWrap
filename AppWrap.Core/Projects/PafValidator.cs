@@ -26,6 +26,13 @@ public static class PafValidator
     private static readonly string[] Categories =
         ["Accessibility", "Development", "Education", "Games", "Graphics & Pictures", "Internet", "Music & Video", "Office", "Security", "Utilities"];
 
+    /// <summary>The picture types the wizard's image picker offers (MainWindow.BrowseImage's filter).</summary>
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".png", ".ico", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff" };
+
+    /// <summary>The imaging layer's per-picture size bound (AppWrap.Imaging.ImageAssets.Load).</summary>
+    private const long MaxImageBytes = 32L * 1024 * 1024;
+
     /// <param name="inMemoryDocuments">
     /// Optional overlay of document texts (project-relative display path → text)
     /// that take precedence over the files on disk. The Phase 2 configuration
@@ -199,6 +206,56 @@ public static class PafValidator
                 if (ext.Equals(".nsh", StringComparison.OrdinalIgnoreCase) || ext.Equals(".nsi", StringComparison.OrdinalIgnoreCase))
                     Add(PafDiagnosticSeverity.Warning, "SourceInstallerHook", PafLayout.ToDisplayPath(Path.GetRelativePath(fullRoot, hook)), null, null,
                         "A source-supplied build script is present under Other/Source.", "Remove it before packaging: AppWrap rejects payloads containing source build scripts and generates its own first-party installer hook.");
+            }
+        }
+
+        // --- Project images (schema v3 properties) ------------------------------
+        // The icon and sidebar are first-class project properties. A referenced
+        // file is validated the way the build will treat it: it must resolve to a
+        // real local file of a picture type the wizard's picker offers, within the
+        // imaging layer's 32 MB bound (AppWrap.Imaging.ImageAssets.Load enforces
+        // the same bound, plus full decode validation, when the image is used).
+        if (project is not null)
+        {
+            ValidateProjectImage(project.IconPath, "iconPath", "icon");
+            ValidateProjectImage(project.SidebarImagePath, "sidebarImagePath", "sidebar image");
+
+            void ValidateProjectImage(string? stored, string key, string label)
+            {
+                if (string.IsNullOrWhiteSpace(stored)) return;
+                var resolved = ProjectStore.ResolveStoredPath(fullRoot, stored.Trim());
+                if (!Path.IsPathRooted(stored) && !InputRules.IsWithin(resolved, fullRoot)
+                    && !string.Equals(resolved, fullRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    Add(PafDiagnosticSeverity.Error, "ProjectImageEscapesRoot", ProjectStore.FileName, null, key,
+                        $"The project's {label} path '{stored}' points outside the project folder.",
+                        $"Pick a {label} inside the project folder, or record an absolute path to the file.");
+                    return;
+                }
+                try { InputRules.SafePath(resolved); }
+                catch (UserInputException)
+                {
+                    Add(PafDiagnosticSeverity.Error, "ProjectImageInvalidPath", ProjectStore.FileName, null, key,
+                        $"The project's {label} path '{stored}' is not a usable local file path.",
+                        $"Pick the {label} again from a local drive, without links.");
+                    return;
+                }
+                if (!File.Exists(resolved))
+                {
+                    Add(PafDiagnosticSeverity.Error, "ProjectImageMissing", ProjectStore.FileName, null, key,
+                        $"The project's {label} file '{stored}' no longer exists.",
+                        $"Pick the {label} again, or clear it to use the default picture.");
+                    return;
+                }
+                var extension = Path.GetExtension(resolved);
+                if (!ImageExtensions.Contains(extension))
+                    Add(PafDiagnosticSeverity.Error, "ProjectImageUnsupportedType", ProjectStore.FileName, null, key,
+                        $"The project's {label} file '{stored}' is not a picture type AppWrap can use.",
+                        "Use a PNG, ICO, JPG, BMP, GIF or TIFF picture.");
+                else if (new FileInfo(resolved).Length > MaxImageBytes)
+                    Add(PafDiagnosticSeverity.Error, "ProjectImageTooLarge", ProjectStore.FileName, null, key,
+                        $"The project's {label} file '{stored}' is larger than 32 MB.",
+                        "Choose a smaller picture (up to 32 MB).");
             }
         }
 

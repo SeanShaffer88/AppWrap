@@ -170,5 +170,34 @@ internal static class ProjectConfigChecks
         check("config first edit creates only the edited file",
             File.Exists(Path.Combine(bareDir, "App", "AppInfo", "appinfo.ini"))
             && !File.Exists(Path.Combine(bareDir, "App", "AppInfo", "installer.ini")));
+
+        // --- Project images: first-class properties on the same workspace. ---
+        var imageDir = Path.Combine(root, "images");
+        Directory.CreateDirectory(Path.Combine(imageDir, "App", "AppInfo"));
+        Directory.CreateDirectory(Path.Combine(imageDir, "pics"));
+        File.WriteAllText(Path.Combine(imageDir, "App", "AppInfo", "appicon.ico"), "fixture icon bytes");
+        File.WriteAllText(Path.Combine(imageDir, "pics", "side.bmp"), "fixture bmp bytes");
+        var images = ProjectConfigWorkspace.Load(imageDir);
+        check("config workspace infers conventional icon", images.IconPath == ProjectStore.ConventionalIconPath
+            && images.SidebarImagePath is null && !images.ImagesDirty);
+        images.SidebarImagePath = Path.Combine(imageDir, "pics", "side.bmp");
+        check("config sidebar set stores project-relative", images.SidebarImagePath == "pics/side.bmp" && images.ImagesDirty
+            && images.HasUnsavedChanges);
+        images.Save();
+        check("config image properties persist in project file", ProjectStore.Load(imageDir) is { } savedImages
+            && savedImages.IconPath == ProjectStore.ConventionalIconPath && savedImages.SidebarImagePath == "pics/side.bmp");
+        var imagesReloaded = ProjectConfigWorkspace.Load(imageDir);
+        var states = imagesReloaded.ImageFieldStates();
+        check("config image field states resolve and exist", states.Count == 2
+            && states[0].Key == ProjectConfigWorkspace.IconPathKey && states[0].Exists && states[0].Diagnostics.Count == 0
+            && states[1].Key == ProjectConfigWorkspace.SidebarImagePathKey && states[1].Exists
+            && states[1].ResolvedPath == Path.GetFullPath(Path.Combine(imageDir, "pics", "side.bmp")));
+        imagesReloaded.IconPath = "gone.png";
+        var brokenStates = imagesReloaded.ImageFieldStates();
+        check("config missing image diagnostic attaches to its field", brokenStates[0].Diagnostics.Any(d =>
+            d.Code == "ProjectImageMissing" && d.Severity == PafDiagnosticSeverity.Error)
+            && brokenStates[1].Diagnostics.Count == 0);
+        imagesReloaded.IconPath = null;
+        check("config image property clears", imagesReloaded.IconPath is null);
     }
 }

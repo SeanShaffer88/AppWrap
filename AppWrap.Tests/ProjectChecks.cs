@@ -19,6 +19,8 @@ internal static class ProjectChecks
             CreatedUtc = created,
             SourceSnapshotHash = new string('a', 64),
             SourceSnapshotTruncated = false,
+            IconPath = "App/AppInfo/appicon.ico",
+            SidebarImagePath = "images/sidebar.png",
             BuildModeHistory = [new BuildModeRecord("PortableApps", created), new BuildModeRecord("Standard", created.AddDays(1))],
             UserChoices = new Dictionary<string, string> { ["namingStyle"] = "NameSetupVersion" },
             ExtensionData = new Dictionary<string, JsonElement>
@@ -33,6 +35,8 @@ internal static class ProjectChecks
         check("project round-trip snapshot and history", roundTripped.SourceSnapshotHash == new string('a', 64) && !roundTripped.SourceSnapshotTruncated
             && roundTripped.BuildModeHistory.Count == 2 && roundTripped.BuildModeHistory[0].Mode == "PortableApps" && roundTripped.BuildModeHistory[1].Mode == "Standard");
         check("project round-trip user choices", roundTripped.UserChoices.TryGetValue("namingStyle", out var style) && style == "NameSetupVersion");
+        check("project round-trip image properties", roundTripped.IconPath == "App/AppInfo/appicon.ico" && roundTripped.SidebarImagePath == "images/sidebar.png"
+            && json.Contains("\"iconPath\"", StringComparison.Ordinal) && json.Contains("\"sidebarImagePath\"", StringComparison.Ordinal));
         check("project round-trip unknown properties kept", roundTripped.ExtensionData is not null
             && roundTripped.ExtensionData.TryGetValue("futureToolSetting", out var future) && future.GetProperty("nested").GetProperty("level").GetInt32() == 3
             && roundTripped.ExtensionData.TryGetValue("note", out var note) && note.GetString() == "kept verbatim");
@@ -66,6 +70,28 @@ internal static class ProjectChecks
         check("project v1 unknown property preserved", migrated.ExtensionData is not null
             && migrated.ExtensionData.TryGetValue("legacyNote", out var legacy) && legacy.GetString() == "written by schema v1"
             && migrated.ToJson().Contains("\"legacyNote\"", StringComparison.Ordinal));
+        // --- Migration: a real v2 document migrates to v3 without loss. ---
+        const string v2Json = """
+            {
+              "schemaVersion": 2,
+              "name": "Two App",
+              "pafSpecVersion": "3.9",
+              "createdUtc": "2026-03-04T05:06:07+00:00",
+              "sourceSnapshotHash": null,
+              "sourceSnapshotTruncated": false,
+              "buildModeHistory": [ { "mode": "Standard", "completedUtc": "2026-03-04T06:00:00+00:00" } ],
+              "userChoices": { "namingStyle": "NameOnly" },
+              "v2Note": "written by schema v2"
+            }
+            """;
+        var migrated2 = PafProject.FromJson(v2Json);
+        check("project v2 migrates to current schema", migrated2.SchemaVersion == PafProject.CurrentSchemaVersion);
+        check("project v2 fields preserved", migrated2.Name == "Two App" && migrated2.BuildModeHistory.Count == 1
+            && migrated2.UserChoices.TryGetValue("namingStyle", out var style2) && style2 == "NameOnly");
+        check("project v2 image properties default null", migrated2.IconPath is null && migrated2.SidebarImagePath is null);
+        check("project v2 unknown property preserved", migrated2.ExtensionData is not null
+            && migrated2.ExtensionData.TryGetValue("v2Note", out var v2Note) && v2Note.GetString() == "written by schema v2");
+
         reject("project future schema rejected", () => PafProject.FromJson("{\"schemaVersion\": 99, \"name\": \"x\"}"));
         reject("project missing schema rejected", () => PafProject.FromJson("{\"name\": \"x\"}"));
         reject("project malformed json rejected", () => PafProject.FromJson("{not json"));
@@ -99,6 +125,21 @@ internal static class ProjectChecks
             "[Format]\nType=PortableApps.comFormat\nVersion=3.5\n[Details]\nName=Shaped App\nAppID=ShapedPortable\n");
         var shaped = ProjectStore.Infer(pafDir);
         check("project inference reads existing appinfo", shaped.Name == "Shaped App" && shaped.PafSpecVersion == "3.5");
+        check("project inference without conventional icon leaves images unset",
+            shaped.IconPath is null && shaped.SidebarImagePath is null);
+        File.WriteAllText(Path.Combine(pafDir, "App", "AppInfo", "appicon.ico"), "fixture icon bytes");
+        var shapedWithIcon = ProjectStore.Infer(pafDir);
+        check("project inference picks up conventional appicon.ico", shapedWithIcon.IconPath == ProjectStore.ConventionalIconPath
+            && shapedWithIcon.SidebarImagePath is null);
+
+        // --- Stored image paths: relative inside the root, absolute outside. ---
+        var storedInside = ProjectStore.ToStoredPath(pafDir, Path.Combine(pafDir, "App", "AppInfo", "appicon.ico"));
+        check("stored path inside root is relative display form", storedInside == "App/AppInfo/appicon.ico");
+        var outsideFile = Path.Combine(root, "outside.png");
+        var storedOutside = ProjectStore.ToStoredPath(pafDir, outsideFile);
+        check("stored path outside root stays absolute", storedOutside == Path.GetFullPath(outsideFile));
+        check("stored path resolution round-trips", ProjectStore.ResolveStoredPath(pafDir, storedInside) == Path.GetFullPath(Path.Combine(pafDir, "App", "AppInfo", "appicon.ico"))
+            && ProjectStore.ResolveStoredPath(pafDir, storedOutside) == Path.GetFullPath(outsideFile));
 
         // --- RecordBuild appends history and persists. ---
         ProjectStore.RecordBuild(bareDir, reopened, OutputMode.PortableApps);
@@ -145,6 +186,22 @@ internal static class ProjectChecks
         var hooks = PafValidator.Validate(hookDir);
         check("validator flags source installer hook", hooks.Any(d => d.Code == "SourceInstallerHook" && d.Severity == PafDiagnosticSeverity.Warning
             && d.FilePath == "Other/Source/PortableApps.comInstallerCustom.nsh"));
+
+        // --- Validator: project image properties are field-level diagnostics. ---
+        var imageDir = Path.Combine(root, "images"); Directory.CreateDirectory(imageDir);
+        File.WriteAllText(Path.Combine(imageDir, "icon.png"), "fixture png bytes");
+        File.WriteAllText(Path.Combine(imageDir, "notes.txt"), "not a picture");
+        var validImages = PafValidator.Validate(imageDir, new PafProject { Name = "Images", IconPath = "icon.png" });
+        check("validator accepts an existing project icon", !validImages.Any(d => d.Code.StartsWith("ProjectImage", StringComparison.Ordinal)));
+        var missingImage = PafValidator.Validate(imageDir, new PafProject { Name = "Images", IconPath = "gone.png" });
+        var missingDiag = missingImage.FirstOrDefault(d => d.Code == "ProjectImageMissing");
+        check("validator missing project icon is field-level", missingDiag is { Severity: PafDiagnosticSeverity.Error, FilePath: "appwrap.project.json", Section: null, Key: "iconPath" });
+        var escapingImage = PafValidator.Validate(imageDir, new PafProject { Name = "Images", SidebarImagePath = "../outside.png" });
+        check("validator escaping project image path is an error", escapingImage.Any(d =>
+            d.Code == "ProjectImageEscapesRoot" && d.Severity == PafDiagnosticSeverity.Error && d.Key == "sidebarImagePath"));
+        var wrongType = PafValidator.Validate(imageDir, new PafProject { Name = "Images", SidebarImagePath = "notes.txt" });
+        check("validator non-picture project image is an error", wrongType.Any(d =>
+            d.Code == "ProjectImageUnsupportedType" && d.Severity == PafDiagnosticSeverity.Error && d.Key == "sidebarImagePath"));
 
         // --- Payload exclusion: the shared predicate BuildService.Snapshot applies. ---
         var payloadDir = Path.Combine(root, "payload"); Directory.CreateDirectory(Path.Combine(payloadDir, "sub"));
