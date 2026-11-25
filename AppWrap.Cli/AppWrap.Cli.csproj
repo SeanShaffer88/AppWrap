@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><AssemblyName>AppWrap.Cli</AssemblyName></PropertyGroup><ItemGroup><ProjectReference Include="../AppWrap.Build/AppWrap.Build.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Library</OutputType><AssemblyName>AppWrap.Cli</AssemblyName></PropertyGroup><ItemGroup><ProjectReference Include="../AppWrap.Build/AppWrap.Build.csproj" /></ItemGroup></Project>

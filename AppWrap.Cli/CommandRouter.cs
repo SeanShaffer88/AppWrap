@@ -15,7 +15,7 @@ namespace AppWrap.Cli;
 /// (the executable's folder, and its Data subfolder). Tests substitute
 /// temporary directories.
 /// </summary>
-public sealed record CliEnvironment(string BaseDirectory, string StateDirectory, string Version, Action<string>? Verbose = null)
+public sealed record CliEnvironment(string BaseDirectory, string StateDirectory, string Version, Action<string>? Verbose = null, bool HostedInGui = false)
 {
     public static CliEnvironment Default(string version) =>
         new(AppContext.BaseDirectory, Path.Combine(AppContext.BaseDirectory, "Data"), version);
@@ -756,6 +756,19 @@ public static class CommandRouter
     {
         var result = new CliResult { Command = "gui" };
         var exe = Path.Combine(environment.BaseDirectory, "AppWrap.exe");
+        // Dual-mode hosting: when the CLI is executing inside AppWrap.exe
+        // itself there is no sibling to launch — the GUI is this executable,
+        // opened by running it without a command. The same applies whenever
+        // the sibling path turns out to be the current process.
+        var currentProcess = Environment.ProcessPath;
+        var isCurrentProcess = currentProcess is not null
+            && string.Equals(Path.GetFullPath(exe), Path.GetFullPath(currentProcess), StringComparison.OrdinalIgnoreCase);
+        if (environment.HostedInGui || isCurrentProcess)
+        {
+            result.Data = new JsonObject { ["hosted"] = true, ["executable"] = exe };
+            result.Lines.Add("The AppWrap GUI is this executable (" + exe + "). Run AppWrap.exe without a command to open it.");
+            return result;
+        }
         if (!File.Exists(exe))
         {
             result.ExitCode = 4;
