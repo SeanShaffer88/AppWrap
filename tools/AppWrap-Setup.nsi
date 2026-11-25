@@ -48,6 +48,8 @@ VIAddVersionKey "LegalCopyright" "Copyright (c) Sean Shaffer. MIT License."
 
 !include "MUI2.nsh"
 
+!define MUI_ICON "..\AppWrap.Gui\Assets\AppWrap.ico"
+!define MUI_UNICON "..\AppWrap.Gui\Assets\AppWrap.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\AppWrap.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open AppWrap"
 

@@ -14,12 +14,16 @@ it exits 4 with an explanatory message. It keeps no state and writes no
 files.
 
 Build routes (both produce a dependency-free x64 console executable —
-imports limited to system DLLs):
+imports limited to system DLLs). Both compile `AppWrapCliShim.rc`, which
+embeds the application icon (`AppWrap.Gui/Assets/AppWrap.ico`, referenced
+by relative path — the .ico is the single source of truth):
 
 - **MSVC (Windows):** `BuildCliShim.cmd` — static CRT (`/MT`), console
   subsystem, ASLR and DEP.
-- **MinGW-w64 (cross-compile):**
-  `x86_64-w64-mingw32-gcc -O2 -static -municode -o AppWrap.Cli.exe AppWrapCliShim.c`
+- **MinGW-w64 (cross-compile, run from this folder):**
+  `x86_64-w64-mingw32-windres AppWrapCliShim.rc -O coff -o AppWrapCliShim.res.o`
+  then
+  `x86_64-w64-mingw32-gcc -O2 -static -municode -o AppWrap.Cli.exe AppWrapCliShim.c AppWrapCliShim.res.o`
 
 The binary in this folder was cross-compiled with MinGW-w64 GCC.
 
