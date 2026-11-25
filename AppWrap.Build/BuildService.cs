@@ -14,6 +14,13 @@ public sealed partial class BuildService(string baseDirectory, string stateDirec
     public async Task<BuildResult> BuildAsync(AppWrapInput input, CancellationToken cancellationToken, OutputIdentity? expectedOutput)
     {
         ValidateInput(input);
+        if (input.Mode == OutputMode.PafPackage)
+        {
+            // Folder outputs carry their own identity discipline (FolderOutputIdentity);
+            // a file identity is only ever checked for the destination it names.
+            if (expectedOutput != null && !string.Equals(Path.GetFullPath(expectedOutput.Path), Path.GetFullPath(input.OutputPath), StringComparison.OrdinalIgnoreCase)) throw new UserInputException("The selected destination changed. Choose the save location again.");
+            return await BuildPafPackageAsync(input, cancellationToken).ConfigureAwait(false);
+        }
         if (expectedOutput != null)
         {
             if (!string.Equals(Path.GetFullPath(expectedOutput.Path), Path.GetFullPath(input.OutputPath), StringComparison.OrdinalIgnoreCase)) throw new UserInputException("The selected destination changed. Choose the save location again.");
@@ -64,14 +71,63 @@ public sealed partial class BuildService(string baseDirectory, string stateDirec
         return completed! with { CleanupWarning = retained.Count == 0 ? null : "Your package is ready, but temporary source copies remain at:\n" + string.Join('\n', retained) };
     }
 
+    /// <summary>
+    /// The PAF Package build: same snapshot → prepare → publish discipline as the
+    /// file outputs, except preparation yields a staged folder and publication is
+    /// the transactional folder commit in FolderArtifactPublisher. The result's
+    /// hash is the folder's deterministic tree hash (SourceSnapshot).
+    /// </summary>
+    private async Task<BuildResult> BuildPafPackageAsync(AppWrapInput input, CancellationToken cancellationToken)
+    {
+        var original = FolderOutputIdentity.Capture(input.OutputPath);
+        var workRoot = Path.Combine(stateDirectory, "Builds");
+        InputRules.SafePath(workRoot);
+        Directory.CreateDirectory(workRoot);
+        var stage = Path.Combine(workRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stage);
+        BuildResult? completed = null;
+        Exception? failure = null;
+        bool retainedStage = false;
+        try
+        {
+            var payload = Path.Combine(stage, "payload");
+            await Task.Run(() => Snapshot(input.SourceFolder, payload, cancellationToken), cancellationToken).ConfigureAwait(false);
+            var staged = await PrepareAsync(input, payload, stage, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = SourceSnapshot.Compute(staged, cancellationToken);
+            if (snapshot.Truncated || snapshot.Sha256 is null) throw new BuildFailureException("The PAF package is too large to verify as a folder. Try the portable package format instead.", "Staged PAF tree exceeded the snapshot bounds.");
+            InputRules.SafePath(input.OutputPath);
+            original.Verify();
+            var published = await FolderArtifactPublisher.PublishAsync(staged, snapshot.Sha256, snapshot.TotalBytes, input.OutputPath, original, cancellationToken).ConfigureAwait(false);
+            completed = published.Result;
+        }
+        catch (Exception ex) { failure = ex; }
+        finally { retainedStage = !TryDeleteStage(stage, workRoot); }
+        if (failure != null)
+        {
+            if (retainedStage) throw new BuildFailureException("AppWrap stopped, but temporary source copies could not be removed. See details for recovery paths.", (failure is BuildFailureException b ? b.Details : failure.ToString()) + "\nRetained staging: " + stage);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+        return completed! with { CleanupWarning = string.Join('\n', new[] { completed!.CleanupWarning, retainedStage ? "Temporary source copies remain at: " + stage : null }.Where(s => s != null)) is var warning && warning.Length != 0 ? warning : null };
+    }
+
     private void ValidateInput(AppWrapInput input)
     {
         InputRules.Validate(input);
-        if (input.Mode is not (OutputMode.Standard or OutputMode.PortableApps)) throw new UserInputException("Choose a supported output format.");
+        if (input.Mode is not (OutputMode.Standard or OutputMode.PortableApps or OutputMode.PafPackage)) throw new UserInputException("Choose a supported output format.");
         if (input.Profile is { ExecutionKind: PortableExecutionKind.Pal } && input.Mode == OutputMode.Standard)
             throw new UserInputException("Choose the portable package format to use a portable profile.");
-        if (Directory.Exists(input.OutputPath)) throw new UserInputException("Choose a file name, rather than a folder, for the package.");
+        if (input.Mode != OutputMode.PafPackage && Directory.Exists(input.OutputPath)) throw new UserInputException("Choose a file name, rather than a folder, for the package.");
         var sourcePath = Path.GetFullPath(input.SourceFolder);
+        if (input.Mode == OutputMode.PafPackage)
+        {
+            // Committing a folder replaces it wholesale: it must not contain the
+            // application folder or AppWrap's own folders.
+            var outputPath = Path.GetFullPath(input.OutputPath);
+            if (InputRules.IsWithin(sourcePath, outputPath)) throw new UserInputException("Save the PAF package in a folder that does not contain the application folder.");
+            foreach (var boundary in new[] { baseDirectory, stateDirectory })
+                if (InputRules.IsWithin(Path.GetFullPath(boundary), outputPath)) throw new UserInputException("Save the PAF package in a folder that does not contain AppWrap's own folder.");
+        }
         foreach (var boundary in new[] { baseDirectory, stateDirectory })
         {
             var owned = Path.GetFullPath(boundary);
@@ -96,13 +152,18 @@ public sealed partial class BuildService(string baseDirectory, string stateDirec
                 if (result.ExitCode != 0) throw new BuildFailureException("AppWrap couldn’t build the installer. Try closing running copies of the app, check the app folder, and build again.", $"Compiler exit code: {result.ExitCode}\n{result.Log}");
                 compiled = Path.Combine(output, "package.exe");
             }
+            else if (input.Mode == OutputMode.PafPackage) compiled = await PortableBuild.BuildPafPackageAsync(input, payload, stage, baseDirectory, cancellationToken).ConfigureAwait(false);
             else compiled = await PortableBuild.BuildAsync(input, payload, stage, baseDirectory, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!File.Exists(compiled) || new FileInfo(compiled).Length < 2) throw new BuildFailureException("The packaging engine did not produce a package. Try again.", "Expected output missing: " + compiled);
+            if (input.Mode == OutputMode.PafPackage)
+            {
+                if (!Directory.Exists(compiled)) throw new BuildFailureException("The packaging engine did not produce a package. Try again.", "Expected output folder missing: " + compiled);
+            }
+            else if (!File.Exists(compiled) || new FileInfo(compiled).Length < 2) throw new BuildFailureException("The packaging engine did not produce a package. Try again.", "Expected output missing: " + compiled);
             return compiled;
     }
 
-    private static void Snapshot(string source, string destination, CancellationToken token)
+    internal static void Snapshot(string source, string destination, CancellationToken token)
     {
         long bytes = 0; int entries = 0;
         Copy(source, destination, 0);
