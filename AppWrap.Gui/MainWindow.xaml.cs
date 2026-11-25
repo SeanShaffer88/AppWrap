@@ -107,6 +107,7 @@ public partial class MainWindow : Window
         if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (UsesPortable) { var testButton = Identify(new Button { Content = "Test package…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TestPackageOpen"); testButton.Click += (_, _) => OpenTestPanel(); panel.Children.Add(testButton); } if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
         if (configOpen && configWorkspace is not null) { RenderProjectConfig(panel); return; }
+        if (templateOpen) { RenderTemplatePanel(panel); return; }
         switch (step)
         {
             case 0:
@@ -119,6 +120,9 @@ public partial class MainWindow : Window
                     configButton.Click += (_, _) => OpenProjectConfig();
                     panel.Children.Add(configButton);
                 }
+                var templateButton = Identify(new Button { Content = "New project from template…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TemplateOpen");
+                templateButton.Click += (_, _) => OpenTemplatePanel();
+                panel.Children.Add(templateButton);
                 break;
             case 1:
                 Question.Text = "What is your app called?"; Hint.Text = "Use the name and version people should see when they install it.";
@@ -167,13 +171,14 @@ public partial class MainWindow : Window
     {
         if (scanning || busy) return;
         var dialog = new OpenFolderDialog { Title = "Choose your application folder", Multiselect = false };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(this) != true) { pendingTemplate = null; return; }
         source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); developerWebsite = ""; InvalidateOutputName(); executable = "";
         try
         {
             Scanning(true);
             var chosen = source;
-            var scanned = await Task.Run(() => (Project: LoadProject(chosen), Executables: InputRules.Executables(chosen)));
+            var template = pendingTemplate; pendingTemplate = null;
+            var scanned = await Task.Run(() => (Project: LoadProject(chosen, template), Executables: InputRules.Executables(chosen)));
             executables = scanned.Executables; ApplyLoadedProject(scanned.Project);
             if (executables.Count == 1) executable = executables[0]; Render();
         }

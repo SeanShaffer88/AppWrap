@@ -231,6 +231,7 @@ public static class PafValidator
             foreach (var issue in overlaid.ParseIssues)
                 diagnostics.Add(new PafDiagnostic(PafDiagnosticSeverity.Error, "IniParseIssue", displayPath, null, null,
                     $"{displayPath} line {issue.Line}: {issue.Message}", "Fix the line so it is a [section] header, a key=value entry, a comment, or a blank line."));
+            AddTodoDiagnostics(overlaid, displayPath, diagnostics);
             return overlaid;
         }
         var path = Path.Combine(fullRoot, displayPath.Replace('/', Path.DirectorySeparatorChar));
@@ -245,6 +246,24 @@ public static class PafValidator
         foreach (var issue in document.ParseIssues)
             diagnostics.Add(new PafDiagnostic(PafDiagnosticSeverity.Error, "IniParseIssue", displayPath, null, null,
                 $"{displayPath} line {issue.Line}: {issue.Message}", "Fix the line so it is a [section] header, a key=value entry, a comment, or a blank line."));
+        AddTodoDiagnostics(document, displayPath, diagnostics);
         return document;
+    }
+
+    /// <summary>
+    /// Additive Phase 5 rule: any entry value still containing a TODO marker is a
+    /// placeholder (the template scaffolder writes several on purpose) and is
+    /// reported as a warning naming the exact field. It never changes the
+    /// severity of any other rule; values without the marker are unaffected.
+    /// </summary>
+    private static void AddTodoDiagnostics(IniDocument document, string displayPath, List<PafDiagnostic> diagnostics)
+    {
+        foreach (var entry in document.AllEntries)
+        {
+            if (entry.Value.Contains("TODO", StringComparison.OrdinalIgnoreCase))
+                diagnostics.Add(new PafDiagnostic(PafDiagnosticSeverity.Warning, "TodoPlaceholder", displayPath, entry.Section, entry.Key,
+                    $"{displayPath} still has a TODO placeholder in [{entry.Section}] {entry.Key}.",
+                    "Replace the TODO placeholder with the real value before publishing the package."));
+        }
     }
 }
