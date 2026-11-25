@@ -7,7 +7,7 @@ $dotnet=(Get-Command dotnet.exe -ErrorAction Stop).Source
 & 'C:/Users/Sean Shaffer/Documents/DevTools/Invoke-DevBuild.ps1' -ProjectPath $repository -Executable $dotnet -ArgumentList @('publish','AppWrap.Gui/AppWrap.Gui.csproj','-c','Release','-r','win-x64','--self-contained','true','-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=false','-o',$Destination) -ArtifactPath @((Join-Path $Destination 'AppWrap.exe')) -TimeoutSeconds 240
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 New-Item -ItemType Directory -Path (Join-Path $Destination 'third_party') | Out-Null
-foreach($backend in @('innosetup','portableapps')){
+foreach($backend in @('innosetup','portableapps','pal')){
   Copy-Item -LiteralPath (Join-Path $repository "third_party/$backend") -Destination (Join-Path $Destination 'third_party') -Recurse
 }
 foreach($file in @('README.md','LICENSE','THIRD-PARTY-NOTICES.md')){Copy-Item -LiteralPath (Join-Path $repository $file) -Destination $Destination}
