@@ -77,6 +77,7 @@ public partial class MainWindow
             ? new[] { OutputInput(OutputMode.Standard, Path.Combine(outputFolder, GeneratedName(OutputMode.Standard))), OutputInput(OutputMode.PortableApps, Path.Combine(outputFolder, GeneratedName(OutputMode.PortableApps))) }
             : new[] { OutputInput(Mode, SingleDestination) };
         foreach (var input in inputs) InputRules.Validate(input);
+        var projectWarning = await SaveProjectBeforeBuildAsync();
         OutputIdentity[] identities;
         Scanning(true);
         try { identities = await Task.Run(() => inputs.Select(i => OutputIdentity.Capture(i.OutputPath)).ToArray()); }
@@ -100,6 +101,9 @@ public partial class MainWindow
                 var result = await Task.Run(() => service.BuildAsync(inputs[0], cancellation.Token, expectedOutput: identities[0]));
                 cleanupWarning = result.CleanupWarning; output = result.OutputPath;
             }
+            var recordWarning = await RecordProjectBuildAsync(inputs.Select(i => i.Mode));
+            var warnings = new[] { projectWarning, recordWarning, cleanupWarning }.Where(w => !string.IsNullOrEmpty(w)).ToList();
+            cleanupWarning = warnings.Count == 0 ? null : string.Join("\n", warnings);
             finished = true; return true;
         }
         finally { busy = false; cancellation.Dispose(); cancellation = null; }

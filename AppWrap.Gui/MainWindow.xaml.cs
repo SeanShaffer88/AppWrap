@@ -161,7 +161,14 @@ public partial class MainWindow : Window
         var dialog = new OpenFolderDialog { Title = "Choose your application folder", Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
         source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); developerWebsite = ""; InvalidateOutputName(); executable = "";
-        try { Scanning(true); executables = await Task.Run(() => InputRules.Executables(source)); if (executables.Count == 1) executable = executables[0]; Render(); }
+        try
+        {
+            Scanning(true);
+            var chosen = source;
+            var scanned = await Task.Run(() => (Project: LoadProject(chosen), Executables: InputRules.Executables(chosen)));
+            executables = scanned.Executables; ApplyLoadedProject(scanned.Project);
+            if (executables.Count == 1) executable = executables[0]; Render();
+        }
         catch (Exception ex) { Render(); ShowError(ex); }
         finally { Scanning(false); }
     }
