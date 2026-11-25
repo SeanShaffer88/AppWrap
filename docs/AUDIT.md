@@ -13,7 +13,7 @@ in two passes. Neither pass is ever part of a build.
 | --- | --- | --- |
 | Portable `.zip` | Extracted with the build's own safety discipline (no traversal, no links, bounded size) and inventoried: likely data locations (folders/files named like data/settings/profile/config, config and database files at the app root), embedded config files scanned for hardcoded absolute paths, `.reg` files parsed into registry findings, executables, shortcuts, driver files | What the app writes at runtime that leaves no trace in the payload |
 | Setup `.msi` | The MSI's File / Registry / Shortcut / Directory / ServiceInstall tables, read through `msi.dll` behind the `IMsiReader` platform seam (`WindowsMsiReader`; a recorded fixture reader covers checks and non-Windows hosts) | Custom actions' runtime behavior |
-| Setup `.exe` | Installer family identified by signature (NSIS / Inno Setup / MSI wrapper / unknown) | The payload: AppWrap has no sanctioned silent unpacker for these families, so the audit records an explicit **static audit limited** finding instead of guessing. The runtime pass is how such a source is observed. |
+| Setup `.exe` | Installer family identified by signature (NSIS / Inno Setup / MSI wrapper / unknown). With the pipeline's prepared extraction engines (`docs/PIPELINE.md` stage 1), the payload is also unpacked — 7-Zip for NSIS/wrappers, innoextract for Inno Setup — and inventoried like a folder | What the app writes at runtime that leaves no trace in the payload; Inno formats newer than innoextract 1.9 covers, and any payload when no engine is prepared (then the audit records an explicit **static audit limited** finding instead of guessing — the runtime pass is how such a source is observed) |
 
 Every finding is typed — `FileDataLocation`, `RegistryWrite`,
 `RegistryRead`, `HardcodedPath`, `Shortcut`, `ServiceOrDriver`,
@@ -52,6 +52,16 @@ point) and AppWrap does not uninstall it afterwards; only the install
 Installers needing administrator rights, a reboot or interaction fail or
 time out, and that outcome is reported.
 
+**Sandboxed route (pipeline stage 2).** When Sandboxie-Plus is
+installed (AppWrap Setup bootstraps it — `docs/PIPELINE.md` stage 0),
+the runtime pass can profile inside a dedicated Sandboxie box instead:
+the installer and the app run in the box, and the harvest — box files
+mapped back to host/PAL paths, plus the box's own registry hive —
+becomes the findings through the same classification. Nothing touches
+the real host filesystem or registry on this route. The audit result
+states which backend observed (`runtimeBackend`); without Sandboxie
+the pass falls back to the host route above and says so.
+
 ## Draft profile synthesis
 
 Findings feed the existing portable-profile model as a **draft**:
@@ -67,8 +77,17 @@ Findings feed the existing portable-profile model as a **draft**:
   When a file move's target would overlap a data-folder move — which the
   planner forbids — the directory move wins and the file is reported as
   needing a human decision, never silently emitted.
-- Hardcoded paths, shortcuts, services/drivers and audit limits have no
-  honest PAL equivalent: they are returned as **unmapped findings**.
+- Leftover vendor folders → `[DirectoriesCleanupIfEmpty]` rules: the
+  vendor parent of a redirected AppData folder, and ProgramData vendor
+  folders (cleanup-only — ProgramData cannot be redirected — with a
+  note saying so).
+- A hardcoded absolute path inside a payload config file →
+  a `[FileWrite]` Replace rule when the path tokenizes to a PAL form
+  (%APPDATA%, %USERPROFILE%, …), so PAL rewrites the machine path in
+  that file at launch.
+- Hardcoded paths that do not tokenize, shortcuts, services/drivers and
+  audit limits have no honest PAL equivalent: they are returned as
+  **unmapped findings**.
 
 The draft is validated by the ordinary profile validator and planner,
 exactly like a hand-written profile — guard-owned installer keys are
@@ -83,13 +102,19 @@ profile only when the user saves it there.
   read the findings, then **Review draft profile** loads the draft into
   the profile workspace and points the wizard at the audited payload.
 - **CLI:** `audit <source> [--runtime] [--draft <profile.json>]
-  [--report <audit-report.json>]` (see `docs/CLI.md`); a reviewed draft
-  builds with `build --profile <file>` or `build --audit-draft <file>`.
+  [--report <audit-report.json>]` (see `docs/CLI.md`); `--engines`
+  adds the prepared extraction engines to the static pass and
+  `--sandboxie` routes the runtime pass through Sandboxie when
+  available. A reviewed draft builds with `build --profile <file>` or
+  `build --audit-draft <file>`.
 
 ## Evidence level
 
 **Configuration validated**: finding classification, .reg parsing, MSI
 fixture parsing, registry snapshot diffing and draft synthesis are
-check-covered on a non-Windows host (`AuditChecks`, `CliChecks`).
+check-covered on a non-Windows host (`AuditChecks`, `CliChecks`), as
+are the pipeline's engine planning, path mapping, box harvest and
+synthesis extensions (`PipelineChecks`, `docs/PIPELINE.md`).
 The real `msi.dll` reader, the advapi32 registry provider, silent
-installs and all Windows runtime behavior are **Unverified**.
+installs, the Sandboxie provider and all Windows runtime behavior are
+**Unverified**.

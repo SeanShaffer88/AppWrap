@@ -256,12 +256,25 @@ save/restore, covered `[RegistryValueWrite]`, `[DirectoriesMove]` /
 `[FilesMove]` redirects — through the same validator and planner as a
 hand-written profile, with guard-owned installer keys untouched.
 Findings with no honest PAL equivalent (services, drivers, hardcoded
-paths) are reported as unmapped, never faked into rules; a service or
-driver in the source is a hard warning that the converted package will
-still touch the host outside the launcher's cleanup. The draft is
-untrusted data until the user reviews and saves it in the profile
-workspace; neither audit pass is part of any build, and the static pass
-executes nothing.
+paths that do not tokenize to a PAL form) are reported as unmapped,
+never faked into rules; a service or driver in the source is a hard
+warning that the converted package will still touch the host outside
+the launcher's cleanup. The draft is untrusted data until the user
+reviews and saves it in the profile workspace; neither audit pass is
+part of any build, and the static pass executes nothing.
+
+The conversion pipeline (`docs/PIPELINE.md`) extends this surface
+without changing it: prepared extraction engines unpack installer
+payloads for the static pass; the runtime pass can profile inside a
+Sandboxie box; drafts additionally gain `[DirectoriesCleanupIfEmpty]`
+rules for leftover vendor folders and `[FileWrite]` Replace rules for
+hardcoded paths that do tokenize; and a package built without a
+supplied sidebar image gets the standard branding splash composited
+from the app's icon and name in the sidebar image's slot (164×314
+24-bit BMP, `PortableApps.comInstaller.bmp` — the package-side file the
+official installer does not consume; see the sidebar note above).
+Setup-time Sandboxie bootstrapping is AppWrap's own installer behavior
+(documented in `docs/PIPELINE.md`), not part of any generated package.
 
 ## Custom code and the no-scripts guarantee
 

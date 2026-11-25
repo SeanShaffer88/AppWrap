@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AppWrap.Build;
 using AppWrap.Build.Audit;
+using AppWrap.Build.Pipeline;
 using AppWrap.Core;
 using AppWrap.Core.Audit;
+using AppWrap.Core.Pipeline;
 using AppWrap.Core.PortableProfiles;
 using AppWrap.Core.Projects;
 using AppWrap.Core.TestHarness;
@@ -724,9 +726,28 @@ public static class CommandRouter
             : Path.Combine(environment.StateDirectory, "TestReports", "test-report-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
         var appName = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
         var request = new TestRunRequest(appName, mode, folder, reportPath, invocation.Value("launch"), timeout);
-        var run = invocation.Has("registry")
-            ? await AppWrap.Build.TestHarness.RunAsync(request, new ProcessTestRunner(), token, new WindowsRegistrySnapshotProvider(), null).ConfigureAwait(false)
-            : await AppWrap.Build.TestHarness.RunAsync(request, token).ConfigureAwait(false);
+        TestRunResult run;
+        if (invocation.Has("sandboxie"))
+        {
+            var sandbox = new SandboxieProvider();
+            if (!sandbox.IsAvailable)
+            {
+                result.ExitCode = 4;
+                result.Error = "Sandboxie-Plus is not installed, so the Sandboxie leak-verification mode cannot run. Install Sandboxie-Plus (AppWrap Setup bootstraps the pinned release) or run the test without --sandboxie.";
+                result.Lines.Add(result.Error);
+                return result;
+            }
+            run = await AppWrap.Build.TestHarness.RunSandboxieAsync(request, sandbox, token,
+                invocation.Has("registry") ? new WindowsRegistrySnapshotProvider() : null, null).ConfigureAwait(false);
+        }
+        else if (invocation.Has("registry"))
+        {
+            run = await AppWrap.Build.TestHarness.RunAsync(request, new ProcessTestRunner(), token, new WindowsRegistrySnapshotProvider(), null).ConfigureAwait(false);
+        }
+        else
+        {
+            run = await AppWrap.Build.TestHarness.RunAsync(request, token).ConfigureAwait(false);
+        }
         var report = run.Report;
         var violations = new JsonArray();
         foreach (var write in report.Violations)
@@ -747,6 +768,7 @@ public static class CommandRouter
             ["detectedWrites"] = report.DetectedWrites.Count,
             ["violations"] = violations,
             ["registryObserved"] = report.RegistryObserved,
+            ["observationBackend"] = report.ObservationBackend,
             ["registryChanges"] = report.RegistryChangeList.Count,
             ["registryViolations"] = report.RegistryViolationList.Count,
             ["cleanupWarning"] = run.CleanupWarning,
@@ -785,13 +807,29 @@ public static class CommandRouter
 
         AppWrap.Core.Audit.AuditReport report;
         string? payloadFolder = null;
+        string? runtimeBackend = null;
         if (invocation.Has("runtime"))
         {
             if (extension == ".zip")
                 throw new CliUsageException("--runtime applies to a setup .exe/.msi. Audit the zip statically, then build and use 'test' on the package.", "audit");
             var silentArgs = invocation.Value("silent-args")?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var runtime = await RuntimeAuditor.RunAsync(new RuntimeAuditRequest(
-                source, invocation.Value("launch"), silentArgs), token).ConfigureAwait(false);
+            RuntimeAuditResult runtime;
+            var sandbox = invocation.Has("sandboxie") ? new SandboxieProvider() : null;
+            if (sandbox is not null && sandbox.IsAvailable)
+            {
+                runtime = await RuntimeAuditor.RunSandboxedAsync(new RuntimeAuditRequest(
+                    source, invocation.Value("launch"), silentArgs), sandbox, new WindowsMsiReader(), token).ConfigureAwait(false);
+                runtimeBackend = "sandboxie";
+                result.Lines.Add("Runtime pass backend: Sandboxie (the installer and app ran inside a dedicated box; the host was not touched).");
+            }
+            else
+            {
+                if (sandbox is not null)
+                    result.Lines.Add("Sandboxie-Plus is not installed, so the runtime pass ran on the host instead: the installer's registry writes land in the real registry (observing them is the point of the host route).");
+                runtime = await RuntimeAuditor.RunAsync(new RuntimeAuditRequest(
+                    source, invocation.Value("launch"), silentArgs), token).ConfigureAwait(false);
+                runtimeBackend = "host";
+            }
             report = runtime.Report;
             result.Lines.Add($"Runtime pass: installer exit {(runtime.InstallerExitCode?.ToString() ?? "unknown")}, app exit {(runtime.AppExitCode?.ToString() ?? "not launched")}{(runtime.AppTimedOut ? " (timed out)" : "")}, {runtime.RegistryChanges.Count} registry change(s).");
             if (runtime.CleanupWarning is not null) result.Lines.Add("Warning: " + runtime.CleanupWarning);
@@ -807,7 +845,29 @@ public static class CommandRouter
             IMsiReader reader = invocation.Value("msi-fixture") is { } fixture
                 ? FixtureMsiReader.FromJson(File.ReadAllText(Path.GetFullPath(fixture)))
                 : new WindowsMsiReader();
-            report = await Task.Run(() => StaticAuditor.AuditMsi(source, reader), token).ConfigureAwait(false);
+            if (invocation.Has("engines"))
+            {
+                var availability = EngineBackend.Locate(environment.BaseDirectory);
+                var scratch = Path.Combine(environment.StateDirectory, "Audit", Path.GetFileNameWithoutExtension(source) + "-" + Guid.NewGuid().ToString("N")[..8]);
+                report = await StaticAuditor.AuditMsiWithEnginesAsync(source, reader, scratch, new ProcessExtractionRunner(), availability, token).ConfigureAwait(false);
+                result.Lines.Add(availability.Has(ExtractionEngineKind.LessMsi)
+                    ? "Static engines: lessMSI payload extraction complemented the table inventory."
+                    : "Static engines: lessMSI is not prepared beside AppWrap; the table inventory stands alone.");
+            }
+            else
+            {
+                report = await Task.Run(() => StaticAuditor.AuditMsi(source, reader), token).ConfigureAwait(false);
+            }
+        }
+        else if (invocation.Has("engines"))
+        {
+            var availability = EngineBackend.Locate(environment.BaseDirectory);
+            var scratch = Path.Combine(environment.StateDirectory, "Audit", Path.GetFileNameWithoutExtension(source) + "-" + Guid.NewGuid().ToString("N")[..8]);
+            report = await StaticAuditor.AuditExeWithEnginesAsync(source, scratch, new ProcessExtractionRunner(), availability, token).ConfigureAwait(false);
+            payloadFolder = report.PayloadFolder;
+            result.Lines.Add(availability.Kinds.Count > 0
+                ? $"Static engines: prepared beside AppWrap: {string.Join(", ", availability.Kinds)}."
+                : "Static engines: none prepared beside AppWrap; the audit states its limits instead of unpacking.");
         }
         else
         {
@@ -829,6 +889,7 @@ public static class CommandRouter
             ["source"] = report.SourcePath, ["sourceKind"] = report.SourceKind.ToString(),
             ["payloadFolder"] = payloadFolder ?? report.PayloadFolder, ["mainExecutable"] = report.MainExecutable,
             ["findings"] = findings, ["hardWarnings"] = report.Findings.Count(f => f.HardWarning),
+            ["runtimeBackend"] = runtimeBackend,
         };
         result.Lines.Add($"Audited {report.SourceKind} source: {report.Findings.Count} finding(s), {report.Findings.Count(f => f.HardWarning)} hard warning(s).");
 

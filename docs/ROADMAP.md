@@ -142,6 +142,41 @@ snapshot diffing, synthesis and the CLI surface are check-covered);
 the real msi.dll reader, the registry provider, silent installs and all
 Windows runtime behavior **Unverified**.
 
+### Four-stage conversion pipeline (Sandboxie)
+
+The audit grew into the four-stage pipeline of `docs/PIPELINE.md`.
+**Stage 0 (bootstrap):** AppWrap Setup checks for Sandboxie-Plus and —
+per SEAN's explicit 2026-11-25 decision, a scoped override of the
+standing zero-cloud / no-silent-elevation rules for this feature only —
+silently downloads the pinned release (1.18.8, hash-compared against
+the lock; the hash itself is recorded Unverified because the project
+publishes none AppWrap can cite) and installs it with its driver when
+missing or outdated; any failure leaves AppWrap working, is stated
+plainly in the install log and on the final page, and the profiler
+falls back to host observation. **Stage 1 (ingestion):** 7-Zip,
+innoextract and lessMSI are pinned optional backends
+(`tools/Prepare-EngineBackend.ps1`, `third_party/engines`), wired into
+the static audit behind the engine seam — NSIS/Inno/MSI payloads are
+unpacked and inventoried; a missing or failing engine degrades to the
+stated audit limit. **Stage 2 (sandboxed profiling):** the runtime
+pass can run the vendor installer and app inside a dedicated
+Sandboxie box and harvest box files (mapped to PAL paths) plus the
+box registry hive into the same findings; without Sandboxie it falls
+back to the host route and the result names the backend.
+**Stage 3 (synthesis):** drafts gained leftover-vendor-folder
+`[DirectoriesCleanupIfEmpty]` rules, `[FileWrite]` Replace rules for
+tokenizable hardcoded paths in payload config files, and a composited
+branding splash (icon + app name) when no sidebar image is supplied.
+**Stage 4 (leak verification):** the test harness runs the packaged
+app in a clean Sandboxie box (`test --sandboxie`); the verdict then
+certifies zero writes escaped the box, and the report records the
+observation backend. **Configuration validated** (`PipelineChecks`:
+locks, bootstrap decisions, engine planning, path mapping, box config
+and harvest, synthesis extensions, fake-sandbox verdicts); every
+Windows runtime element — the bootstrap's download/install, Start.exe
+driving, hive loading, real engine processes, splash rasterization —
+**Unverified**.
+
 ### Backend provenance pin
 
 The stale `modifiedWizardSha256` pin in

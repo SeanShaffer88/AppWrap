@@ -230,6 +230,7 @@ violations.
 | `--timeout <seconds>` | 1–3600. Default 60. On timeout the app is asked to close, then terminated. |
 | `--report <path>` | Default: `Data/TestReports/test-report-<yyyyMMdd-HHmmss>.json` beside the CLI (the GUI's convention). |
 | `--registry` | Also observe the registry (Windows only): the HKCU/HKLM `Software` roots are snapshotted before and after the run; registry violations fail the verdict. The wizard's Test panel always observes the registry. The JSON result gains `registryObserved`, `registryChanges` and `registryViolations`. |
+| `--sandboxie` | Run the app inside a dedicated Sandboxie box instead (pipeline stage 4 leak verification, `docs/PIPELINE.md`): every watched root is outside the box, so a Pass certifies zero writes escaped. Requires Sandboxie-Plus; without it the command exits 4 with a plain explanation — it never silently falls back to the host mode. The result and the report record `observationBackend`. |
 
 Exit 0 on verdict Pass, 4 on verdict Fail — the report is written either
 way. JSON `result`:
@@ -237,7 +238,7 @@ way. JSON `result`:
 ```json
 { "verdict": "Pass", "reportPath", "appName", "mode": "portable",
   "appExitCode": 0, "timedOut": false, "durationSeconds": 1.2,
-  "detectedWrites": 3,
+  "detectedWrites": 3, "observationBackend": "host",
   "violations": [ { "root": "Profile", "path": "AppData/Roaming/App/settings.ini",
                     "change": "Created", "category": "ProfileLeakage" } ],
   "cleanupWarning": null }
@@ -256,6 +257,8 @@ identified by family with its payload stated as an audit limit.
 | Option | Meaning |
 | --- | --- |
 | `--runtime` | The explicit second pass (Windows only, `.exe`/`.msi` only): silently install into a scratch folder, launch the installed app once, and merge the observed registry writes into the findings. Never part of a build. |
+| `--engines` | Use the pipeline's prepared extraction engines for the static pass (7-Zip / innoextract / lessMSI under `third_party/engines` beside the CLI; `docs/PIPELINE.md` stage 1): installer payloads are unpacked and inventoried instead of stopping at family identification. Without prepared engines the lines say so and the pass degrades to family identification + the explicit audit limit. |
+| `--sandboxie` | With `--runtime`: profile inside a dedicated Sandboxie box (pipeline stage 2) — the install and launch happen in the box and the box's files + registry hive are harvested, so the host is untouched. Without Sandboxie-Plus the runtime pass falls back to the host route and the result says so. The JSON result gains `runtimeBackend` (`sandboxie` / `host`). |
 | `--draft <profile.json>` | Synthesize a DRAFT portable profile from the findings and save it in the wizard's profile `.json` shape. The draft is untrusted until reviewed and saved in the profile workspace; if the draft itself has validation errors the command exits 3 (the file is still written). |
 | `--report <path>` | Write the full audit report JSON (`audit-report` shape: source, kind, payload folder, main executable, typed findings with evidence and confidence). |
 | `--launch <file>` | For `--runtime`: the installed app's launch file relative to the install folder. Default: the inventoried main `.exe`. |

@@ -1,3 +1,4 @@
+using AppWrap.Core.Pipeline;
 using AppWrap.Core.PortableProfiles;
 
 namespace AppWrap.Core.Audit;
@@ -21,9 +22,17 @@ public sealed record DraftProfileResult(
 ///   profile leakage) become [DirectoriesMove] rules; payload-side data
 ///   files/folders become [FilesMove] / [DirectoriesMove] rules targeting
 ///   the app folder, which is PAL's settings-in-app-folder pattern.
-/// - Hardcoded paths, shortcuts, services/drivers and audit limits have no
-///   honest PAL equivalent: they are returned as unmapped findings, never
-///   silently dropped or faked into rules.
+/// - Leftover vendor folders become [DirectoriesCleanupIfEmpty] rules:
+///   the (now-empty) vendor parent of a redirected AppData folder, and
+///   ProgramData vendor folders — ProgramData cannot be redirected by a
+///   per-user portable, so empty-cleanup plus a note is the honest rule.
+/// - A hardcoded absolute path inside a payload config file becomes a
+///   [FileWrite] Replace rule when the path tokenizes to a PAL variable
+///   form (%APPDATA%, %USERPROFILE%, …): at launch PAL rewrites the
+///   machine-specific path in the file to the portable equivalent.
+/// - Hardcoded paths that do not tokenize, shortcuts, services/drivers
+///   and audit limits have no honest PAL equivalent: they are returned
+///   as unmapped findings, never silently dropped or faked into rules.
 ///
 /// The draft is data only. Like every import it grants no trust
 /// (<see cref="PortableProfile.TrustedExtensions"/> stays empty and
@@ -139,9 +148,66 @@ public static class AuditProfileSynthesizer
         if (directoryMoves.Count > 0) notes.Add($"{directoryMoves.Count} data folder(s) will be redirected into the portable Data folder.");
         if (fileMoves.Count > 0) notes.Add($"{fileMoves.Count} data/config file(s) will be kept with the portable data and placed for the app at launch.");
 
+        // --- leftover vendor folders ---------------------------------------
+        // Redirecting %APPDATA%\Vendor\App leaves the empty %APPDATA%\Vendor
+        // shell behind on the host; PAL can remove it when it is empty.
+        // ProgramData folders cannot be redirected at all (machine-wide,
+        // per-user portable), so their vendor folders get the same
+        // cleanup-if-empty treatment plus a note, never a fake move.
+        var cleanup = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var target in directoryMoves.Values)
+        {
+            var segments = target.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 3 && segments[0] is "%APPDATA%" or "%LOCALAPPDATA%" or "%PROGRAMDATA%")
+                cleanup.Add(segments[0] + "\\" + segments[1]);
+        }
+        var programDataSeen = false;
+        foreach (var finding in report.Findings.Where(f => f.Kind == AuditFindingKind.FileDataLocation))
+        {
+            var tokenized = PalPathMapper.TokenizeKnownRoots(finding.Subject.Replace('/', '\\'));
+            if (!tokenized.StartsWith("%PROGRAMDATA%\\", StringComparison.OrdinalIgnoreCase)) continue;
+            var segments = tokenized.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 2) cleanup.Add(segments[0] + "\\" + segments[1]);
+            if (segments.Length >= 3) cleanup.Add(segments[0] + "\\" + segments[1] + "\\" + segments[2]);
+            programDataSeen = true;
+        }
+        var cleanupIndex = 0;
+        foreach (var path in cleanup) launcher.AppendEntry("DirectoriesCleanupIfEmpty", (++cleanupIndex).ToString(), path);
+        if (cleanup.Count > 0)
+            notes.Add($"{cleanup.Count} vendor folder(s) the app leaves behind will be removed at exit when empty (DirectoriesCleanupIfEmpty).");
+        if (programDataSeen)
+            notes.Add("The app creates folders under ProgramData, which a portable package cannot redirect; the draft only removes them when left empty.");
+
+        // --- hardcoded paths in payload config files -------------------------
+        // PAL's [FileWrite] Replace is the real mechanism for a config file
+        // that hardcodes a machine path: at launch the literal path in the
+        // file is rewritten to its PAL-token form. Only findings whose
+        // evidence is a payload config file and whose path tokenizes are
+        // mapped; the rest stay unmapped below.
+        var fileWriteMapped = new HashSet<AuditFinding>(ReferenceEqualityComparer.Instance);
+        if (report.PayloadFolder is not null)
+        {
+            var writeIndex = 0;
+            foreach (var finding in report.Findings.Where(f => f.Kind == AuditFindingKind.HardcodedPath))
+            {
+                var tokenized = PalPathMapper.TokenizeKnownRoots(finding.Subject);
+                if (string.Equals(tokenized, finding.Subject, StringComparison.Ordinal)) continue;
+                writeIndex++;
+                var section = "FileWrite" + writeIndex;
+                launcher.SetValue(section, "Type", "Replace");
+                launcher.SetValue(section, "File", "%PAL:AppDir%\\" + finding.Evidence.Replace('/', '\\'));
+                launcher.SetValue(section, "Find", finding.Subject);
+                launcher.SetValue(section, "Replace", tokenized);
+                fileWriteMapped.Add(finding);
+            }
+            if (writeIndex > 0)
+                notes.Add($"{writeIndex} hardcoded path(s) in payload config files will be rewritten to portable form at launch (FileWrite Replace).");
+        }
+
         foreach (var finding in report.Findings)
-            if (finding.Kind is AuditFindingKind.HardcodedPath or AuditFindingKind.Shortcut or AuditFindingKind.ServiceOrDriver
-                or AuditFindingKind.StaticAuditLimited)
+            if (finding.Kind is AuditFindingKind.Shortcut or AuditFindingKind.ServiceOrDriver
+                or AuditFindingKind.StaticAuditLimited
+                || (finding.Kind == AuditFindingKind.HardcodedPath && !fileWriteMapped.Contains(finding)))
                 unmapped.Add(finding);
         if (unmapped.Count > 0)
             notes.Add($"{unmapped.Count} finding(s) have no portable-profile rule (hardcoded paths, shortcuts, services/drivers, audit limits) and need a human decision.");

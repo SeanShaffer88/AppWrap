@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using AppWrap.Core;
+using AppWrap.Core.Pipeline;
 using AppWrap.Core.PortableProfiles;
 using AppWrap.Core.TestHarness;
 
@@ -127,6 +128,19 @@ public static class TestHarness
         RunAsync(request, runner, token, null, null);
 
     /// <summary>
+    /// Stage 4 leak verification: the same run, but the packaged app runs
+    /// inside a clean Sandboxie box (a dedicated box whose file root is
+    /// inside the harness's throwaway tree) instead of on the host. The
+    /// watched roots are unchanged — they are all *outside* the box, so
+    /// any write the harness observes there escaped the sandbox, which is
+    /// exactly the host contamination the verdict must catch. The report
+    /// records the "sandboxie" observation backend.
+    /// </summary>
+    public static Task<TestRunResult> RunSandboxieAsync(TestRunRequest request, ISandboxProvider sandbox, CancellationToken token,
+        IRegistrySnapshotProvider? registryProvider = null, IReadOnlyList<string>? registryRoots = null) =>
+        RunAsync(request, new ProcessTestRunner(), token, registryProvider, registryRoots, sandbox);
+
+    /// <summary>
     /// The same run with registry observation: when
     /// <paramref name="registryProvider"/> is supplied, the registry roots
     /// (default <see cref="DefaultRegistryRoots"/>) are snapshotted before
@@ -137,7 +151,7 @@ public static class TestHarness
     /// a write there is classified as leakage.
     /// </summary>
     public static async Task<TestRunResult> RunAsync(TestRunRequest request, ITestProcessRunner runner, CancellationToken token,
-        IRegistrySnapshotProvider? registryProvider, IReadOnlyList<string>? registryRoots)
+        IRegistrySnapshotProvider? registryProvider, IReadOnlyList<string>? registryRoots, ISandboxProvider? sandbox = null)
     {
         InputRules.Text(request.AppName, "app name");
         if (!Enum.IsDefined(request.Mode)) throw new UserInputException("Choose a supported test mode.");
@@ -192,7 +206,21 @@ public static class TestHarness
             var before = roots.Select(r => TreeSnapshot.Capture(r.Directory, token)).ToArray();
             var registryBefore = registryProvider?.Capture(registryRoots ?? DefaultRegistryRoots, token);
             var startedUtc = DateTimeOffset.UtcNow;
-            var outcome = await runner.RunAsync(new TestProcessStart(executable, packageDir, environment), request.Timeout ?? DefaultTimeout, token).ConfigureAwait(false);
+            TestProcessOutcome outcome;
+            if (sandbox is null)
+            {
+                outcome = await runner.RunAsync(new TestProcessStart(executable, packageDir, environment), request.Timeout ?? DefaultTimeout, token).ConfigureAwait(false);
+            }
+            else
+            {
+                // The box root lives inside the throwaway tree: harvest and
+                // cleanup are the harness's own, and the watched roots stay
+                // outside the box, so anything observed there escaped.
+                var boxSpec = SandboxieBoxSpec.LeakTest(Path.Combine(workRoot, "box"));
+                Directory.CreateDirectory(boxSpec.FileRootPath);
+                var boxed = await sandbox.RunAsync(boxSpec, executable, [], request.Timeout ?? DefaultTimeout, token).ConfigureAwait(false);
+                outcome = new TestProcessOutcome(boxed.ExitCode, boxed.TimedOut, boxed.Duration);
+            }
             var writes = new List<DetectedWrite>();
             for (var i = 0; i < roots.Length; i++)
                 foreach (var (path, change) in before[i].Diff(TreeSnapshot.Capture(roots[i].Directory, token)))
@@ -217,7 +245,8 @@ public static class TestHarness
                     : WriteClassifier.Verdict(writes, registryChanges, outcome.TimedOut, outcome.ExitCode),
                 registryChanges is not null,
                 registryChanges,
-                registryChanges?.Where(c => c.Violation).ToList());
+                registryChanges?.Where(c => c.Violation).ToList(),
+                sandbox is null ? "host" : "sandboxie");
             WriteReport(request.ReportPath, report);
             result = new TestRunResult(report, Path.GetFullPath(request.ReportPath), null);
         }

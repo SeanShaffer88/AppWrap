@@ -1,5 +1,6 @@
 using AppWrap.Core;
 using AppWrap.Core.Audit;
+using AppWrap.Core.Pipeline;
 using AppWrap.Core.TestHarness;
 
 namespace AppWrap.Build.Audit;
@@ -121,6 +122,107 @@ public static class RuntimeAuditor
         }
         return result!;
     }
+
+    /// <summary>
+    /// The sandboxed route (pipeline stage 2): the same install + launch
+    /// observation, but the vendor installer and the installed app run
+    /// inside a dedicated Sandboxie box whose file root is a scratch
+    /// folder, so nothing they write touches the real host filesystem or
+    /// registry. The harvest — box files mapped back to host/PAL paths,
+    /// and the box's own registry hive — becomes the findings, through
+    /// the same classification as the host route. Falls back to nothing:
+    /// when the provider is unavailable the caller runs the host route
+    /// and the report says which backend observed (see the CLI). The
+    /// install target inside the box is still a scratch path, so the
+    /// installer's own silent switches behave exactly as on the host
+    /// route. Windows-only at runtime; Unverified.
+    /// </summary>
+    public static async Task<RuntimeAuditResult> RunSandboxedAsync(RuntimeAuditRequest request,
+        ISandboxProvider sandbox, IMsiReader msiReader, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(sandbox);
+        if (!sandbox.IsAvailable)
+            throw new BuildFailureException("Sandboxie-Plus is not installed, so the sandboxed profiling route cannot run. The host runtime audit remains available.", "Sandboxed runtime audit requested without Sandboxie.");
+        InputRules.SafePath(request.SourcePath);
+        if (!File.Exists(request.SourcePath)) throw new UserInputException("Choose an installer file that still exists.");
+        var extension = Path.GetExtension(request.SourcePath).ToLowerInvariant();
+        if (extension is not (".exe" or ".msi")) throw new UserInputException("The runtime audit takes a setup .exe or .msi file.");
+
+        var staticReport = extension == ".msi"
+            ? StaticAuditor.AuditMsi(request.SourcePath, msiReader)
+            : StaticAuditor.AuditExe(request.SourcePath);
+        var workRoot = Path.Combine(Path.GetTempPath(), "appwrap-audit-box-" + Guid.NewGuid().ToString("N"));
+        var installDir = Path.Combine(workRoot, "install");
+        Directory.CreateDirectory(installDir);
+        var spec = SandboxieBoxSpec.Profiling(Path.Combine(workRoot, "box"));
+        Directory.CreateDirectory(spec.FileRootPath);
+        RuntimeAuditResult? result = null;
+        try
+        {
+            var (executable, arguments) = InstallCommand(request, installDir);
+            var installer = await sandbox.RunAsync(spec, executable, arguments, request.InstallerTimeout ?? DefaultInstallerTimeout, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+
+            var context = HostContext();
+            var boxFiles = sandbox.HarvestFiles(spec);
+            var findings = new List<AuditFinding>(staticReport.Findings);
+            findings.AddRange(SandboxieHarvest.FromBoxFiles(boxFiles, spec, context));
+
+            int? appExitCode = null;
+            var appTimedOut = false;
+            var launch = request.LaunchExecutable;
+            if (launch is null)
+            {
+                // The installed app's host path, mirrored back from the box:
+                // the executable the harvest saw under the install folder.
+                var installPrefix = installDir.Replace('/', '\\').TrimEnd('\\') + "\\";
+                launch = boxFiles
+                    .Select(f => PalPathMapper.BoxPathToHostPath(f, context))
+                    .Where(p => p is not null && p.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase)
+                        && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(p => p!.Length)
+                    .FirstOrDefault();
+            }
+            else
+            {
+                launch = Path.Combine(installDir, launch.Replace('/', Path.DirectorySeparatorChar));
+            }
+            if (launch is not null)
+            {
+                var app = await sandbox.RunAsync(spec, launch, [], request.AppTimeout ?? DefaultAppTimeout, token).ConfigureAwait(false);
+                appExitCode = app.ExitCode;
+                appTimedOut = app.TimedOut;
+                // Re-harvest: the app's own writes join the findings too.
+                findings.AddRange(SandboxieHarvest.FromBoxFiles(sandbox.HarvestFiles(spec), spec, context));
+            }
+            var registryChanges = SandboxieHarvest.FromLoadedHive(sandbox.CaptureBoxRegistry(spec, token), SandboxieHarvest.LoadRootFor(spec));
+            findings.AddRange(RuntimeFindings.FromRegistryChanges(registryChanges));
+            var merged = staticReport with
+            {
+                Findings = findings.GroupBy(f => (f.Kind, f.Subject)).Select(g => g.First()).ToList(),
+                PayloadFolder = spec.FileRootPath,
+                MainExecutable = launch is not null ? Path.GetFileName(launch) : staticReport.MainExecutable,
+            };
+            result = new RuntimeAuditResult(merged, registryChanges, installDir, installer.ExitCode, appExitCode, appTimedOut, null);
+        }
+        finally
+        {
+            var warning = TryDeleteTree(workRoot);
+            if (result is not null && warning is not null) result = result with { CleanupWarning = warning };
+        }
+        return result!;
+    }
+
+    private static PalPathContext HostContext() => new(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+        null, null);
 
     /// <summary>The silent install command for a source: caller arguments win; otherwise the family switches.</summary>
     internal static (string Executable, IReadOnlyList<string> Arguments) InstallCommand(RuntimeAuditRequest request, string installDir)
