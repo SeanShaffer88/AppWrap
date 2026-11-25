@@ -25,8 +25,8 @@ public sealed class IniEntryNode(string rawText, int line, string? section, stri
 {
     public string? Section { get; internal set; } = section;
     /// <summary>The raw key text exactly as it appeared before '=' (preserves spelling/spacing).</summary>
-    public string RawKey { get; } = rawKey;
-    public string Key { get; } = key;
+    public string RawKey { get; internal set; } = rawKey;
+    public string Key { get; internal set; } = key;
     public string RawValue { get; internal set; } = rawValue;
     /// <summary>Typed view: trimmed value with one pair of outer double quotes stripped.</summary>
     public string Value => StripOuterQuotes(RawValue.Trim());
@@ -185,6 +185,16 @@ public sealed class IniDocument
             existing.RawText = existing.RawKey + "=" + value;
             return;
         }
+        AppendEntry(section, key, value);
+    }
+
+    /// <summary>
+    /// Always appends a new entry at the end of the section (creating the section at the
+    /// end of the document when needed), even when the key already exists — repeated keys
+    /// such as the <c>-</c> discard rows are preserved rather than collapsed.
+    /// </summary>
+    public IniEntryNode AppendEntry(string section, string key, string value)
+    {
         var entry = new IniEntryNode(key + "=" + value, 0, section, key, key, value) { Terminator = _newLine };
         var sectionNode = Sections.FirstOrDefault(s => string.Equals(s.Name, section, StringComparison.OrdinalIgnoreCase));
         if (sectionNode is null)
@@ -201,6 +211,35 @@ public sealed class IniDocument
             InsertNode(insertAt, entry);
         }
         Renumber();
+        return entry;
+    }
+
+    /// <summary>Removes one entry node. Surrounding comments, blank lines and line endings are untouched.</summary>
+    public bool RemoveEntry(IniEntryNode entry)
+    {
+        var index = _nodes.IndexOf(entry);
+        if (index < 0) return false;
+        _nodes.RemoveAt(index);
+        Renumber();
+        return true;
+    }
+
+    /// <summary>
+    /// Swaps an entry with the adjacent entry node (<paramref name="offset"/> -1 or +1)
+    /// when that neighbour belongs to the same section; used to reorder ordered lists
+    /// such as [Environment] without disturbing comments or other sections.
+    /// </summary>
+    public bool MoveEntry(IniEntryNode entry, int offset)
+    {
+        if (offset is not (-1 or 1)) return false;
+        var index = _nodes.IndexOf(entry);
+        var target = index + offset;
+        if (index < 0 || target < 0 || target >= _nodes.Count) return false;
+        if (_nodes[target] is not IniEntryNode other
+            || !string.Equals(other.Section, entry.Section, StringComparison.OrdinalIgnoreCase)) return false;
+        (_nodes[index], _nodes[target]) = (_nodes[target], _nodes[index]);
+        Renumber();
+        return true;
     }
 
     private void AppendNode(IniNode node)

@@ -68,7 +68,7 @@ public partial class MainWindow
         Grid.SetColumn(preview, 1); row.Children.Add(preview); panel.Children.Add(row);
     }
 
-    private AppWrapInput OutputInput(OutputMode mode, string path) => new(source, name.Trim(), version.Trim(), executable, startMenu, desktop, path, mode, mode == OutputMode.PortableApps ? icon : null, mode == OutputMode.PortableApps ? sidebar : null, mode == OutputMode.Standard ? StandardInstallerOptions.Normalize(CurrentStandardOptions) : null);
+    private AppWrapInput OutputInput(OutputMode mode, string path) => new(source, name.Trim(), version.Trim(), executable, startMenu, desktop, path, mode, mode == OutputMode.PortableApps ? icon : null, mode == OutputMode.PortableApps ? sidebar : null, mode == OutputMode.Standard ? StandardInstallerOptions.Normalize(CurrentStandardOptions) : null, mode == OutputMode.PortableApps ? profileState.EffectiveProfile : null);
 
     private async Task<bool> BuildSelectionAsync()
     {

@@ -2,7 +2,7 @@ namespace AppWrap.Core.PortableProfiles;
 
 public enum CapabilityStatus { Supported, Expert, Unsupported, Deprecated, Unrecognized }
 
-public enum PortableDocumentKind { Launcher, Installer, Metadata, UserOverrides }
+public enum PortableDocumentKind { Launcher, Installer, Metadata, UserOverrides, Extensions }
 
 /// <summary>
 /// Versioned knowledge of the pinned PAL 2.2.9 launcher surface (see docs/portable-capability-matrix.md).

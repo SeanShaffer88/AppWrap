@@ -25,8 +25,11 @@ public partial class MainWindow : Window
     private string StateDirectory => Path.Combine(AppContext.BaseDirectory, "Data");
     private OutputMode Mode => PortableMode.IsChecked == true ? OutputMode.PortableApps : OutputMode.Standard;
     private bool UsesStandard => Selection != BuildSelection.Portable;
-    private int IconStep => IsBoth ? 5 : 4;
-    private int TotalSteps => IsBoth ? 8 : UsesPortable ? 7 : 6;
+    private int BehaviorStep => 3;
+    private int ShortcutsStep => UsesPortable ? 4 : 3;
+    private int FinishStep => IsBoth ? 5 : 4;
+    private int IconStep => IsBoth ? 6 : UsesPortable ? 5 : 4;
+    private int TotalSteps => IsBoth ? 9 : UsesPortable ? 8 : 6;
     private bool offerLaunch = true, offerStartup, offerWebsite;
     private string developerWebsite = "";
 
@@ -85,7 +88,7 @@ public partial class MainWindow : Window
     private void Render()
     {
         Error.Text = ""; Details.Visibility = Visibility.Collapsed;
-        var compactFinish = step == 4 && UsesStandard && !busy && !finished;
+        var compactFinish = step == FinishStep && UsesStandard && !busy && !finished;
         Hint.Margin = compactFinish ? new(0, 6, 0, 8) : new(0, 8, 0, 16);
         Steps.Margin = compactFinish ? new(0, 8, 0, 10) : new(0, 8, 0, 18);
         Formats.IsEnabled = !busy && !finished; Formats.Visibility = step == 0 && !busy && !finished ? Visibility.Visible : Visibility.Collapsed;
@@ -94,7 +97,10 @@ public partial class MainWindow : Window
         NextButton.Content = step == TotalSteps - 1 ? IsBoth ? "Build both" : "Build" : "Next";
         CancelButton.Content = finished ? "Close" : busy ? "Cancel build" : "Cancel";
         StepLabel.Text = finished ? "READY TO SHARE" : busy ? "BUILDING YOUR PACKAGE" : $"STEP {step + 1} OF {TotalSteps}";
-        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", 3 => "Shortcuts", 4 when UsesStandard => "Finish options", var s when UsesPortable && s == IconStep => "App icon", var s when UsesPortable && s == IconStep + 1 => "Sidebar image", _ => "Save & build" };
+        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", var s when UsesPortable && s == BehaviorStep => "Portable behavior", var s when s == ShortcutsStep => "Shortcuts", var s when UsesStandard && s == FinishStep => "Finish options", var s when UsesPortable && s == IconStep => "App icon", var s when UsesPortable && s == IconStep + 1 => "Sidebar image", _ => "Save & build" };
+        var workspaceActive = UsesPortable && step == BehaviorStep && configurePortable && !busy && !finished;
+        HeaderBar.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
+        QuestionBlock.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
         Steps.Maximum = TotalSteps; Steps.Value = step + 1; Steps.IsIndeterminate = busy;
         var panel = Panel();
         if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
@@ -127,13 +133,15 @@ public partial class MainWindow : Window
                 }
                 catch (Exception ex) { ShowError(ex); }
                 break;
-            case 3:
+            case var s when UsesPortable && s == BehaviorStep:
+                RenderPortableBehavior(panel); break;
+            case var s when s == ShortcutsStep:
                 Question.Text = "Where should shortcuts go?"; Hint.Text = UsesStandard ? "Choose initial selections. The installing user can change them.\nThese choices apply only to the standard installer." : "Your package appears in the portable app menu.\nWindows shortcuts apply only to standard installers.";
                 panel.Children.Add(Label("Shortcut defaults (optional)"));
                 var menu = Identify(new CheckBox { Content = "Start Menu (optional)", IsChecked = startMenu, IsEnabled = UsesStandard }, "StartMenuShortcut"); menu.Checked += (_, _) => startMenu = true; menu.Unchecked += (_, _) => startMenu = false; panel.Children.Add(menu);
                 var desk = Identify(new CheckBox { Content = "Desktop (optional)", IsChecked = desktop, IsEnabled = UsesStandard }, "DesktopShortcut"); desk.Checked += (_, _) => desktop = true; desk.Unchecked += (_, _) => desktop = false; panel.Children.Add(desk);
                 break;
-            case 4 when UsesStandard:
+            case var s when UsesStandard && s == FinishStep:
                 RenderFinishOptions(panel); break;
             case var s when UsesPortable && s == IconStep:
                 Question.Text = "Choose an icon for your app."; Hint.Text = "Pick a picture, or click Next to use a simple default icon.";
@@ -143,6 +151,8 @@ public partial class MainWindow : Window
                 SelectFile(panel, "Sidebar image (optional)", "SidebarImage", sidebar, () => BrowseImage(false), true); break;
             default: RenderOutput(panel); break;
         }
+        if (UsesPortable && step == BehaviorStep && configurePortable && !busy && !finished)
+            NextButton.IsEnabled = !profileState.HasErrors;
     }
 
     private async void BrowseSource()
@@ -184,7 +194,8 @@ public partial class MainWindow : Window
             if (step == 0) { Scanning(true); try { executables = await Task.Run(() => InputRules.Executables(source)); if (executables.Count == 0) throw new UserInputException("We couldn’t find an application file. Pick the folder containing your app’s .exe."); } finally { Scanning(false); } }
             if (step == 1) { PackageNaming.ValidateName(name.Trim()); InputRules.PackageVersion(version); }
             if (step == 2 && string.IsNullOrEmpty(executable)) throw new UserInputException("Choose the file that opens your app.");
-            if (step == 4 && UsesStandard) StandardInstallerOptions.Normalize(CurrentStandardOptions);
+            if (UsesPortable && step == BehaviorStep && configurePortable && profileState.HasErrors) throw new UserInputException("Fix the portable profile problems shown on this step before continuing.");
+            if (step == FinishStep && UsesStandard) StandardInstallerOptions.Normalize(CurrentStandardOptions);
             if (step < TotalSteps - 1) { step++; Render(); return; }
             if (!await BuildSelectionAsync()) return;
             Render(); if (closingAfterCancel) Close();
