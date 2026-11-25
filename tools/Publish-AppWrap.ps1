@@ -1,6 +1,6 @@
 param([string]$Destination)
 $ErrorActionPreference='Stop'
-$Version='0.2.1'
+$Version='0.2.2'
 $repository=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if(!$Destination){$Destination=[IO.Path]::GetFullPath((Join-Path $repository "../../outputs/AppWrap-$Version-win-x64"))}
 if(Test-Path -LiteralPath $Destination){throw 'Publish destination must be new. Preserve the previous artifact and choose a different destination.'}
