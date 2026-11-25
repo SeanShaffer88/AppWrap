@@ -35,6 +35,15 @@ internal static class Program
         var input = new AppWrapInput(source, "AppWrap Test", "1.2", "bin\\Demo.exe", true, false, Path.Combine(evidence, "standard.exe"));
         InputRules.Validate(input);
         NamingChecks.Run(Check, Reject);
+        ProfileChecks.Run(Check, Reject);
+        await PalChecks.RunAsync(root, evidence, input, Check, Reject);
+        await BundleChecks.RunAsync(evidence, Check);
+        PlannerChecks.Run(Check, Reject);
+        InstallerChecks.Run(Check, Reject);
+        WorkspaceChecks.Run(Check, Reject);
+        StandardOptionsChecks.Run(input, Check, Reject);
+        UpgradeGuardChecks.Run(input, Check, Reject);
+        await BackendLogChecks.Run(evidence, Check);
         Check("nested executable discovery", InputRules.Executables(source).SequenceEqual(["bin\\Demo.exe"]));
         Check("four-part numeric version", InputRules.PackageVersion("01.2") == "1.2.0.0");
         foreach (var bad in new[] { "", "1.2.3.4.5", "1.x", "1..2", "65536", "-1" }) Reject("invalid version " + bad, () => InputRules.PackageVersion(bad));
@@ -46,8 +55,8 @@ internal static class Program
         var newer = InnoSetupGenerator.Generate(input with { AppVersion = "2.0" }, "C:\\plain", "C:\\out");
         Check("stable upgrade identity", script.Split('\n').Single(l => l.Contains("AppId=", StringComparison.Ordinal)) == newer.Split('\n').Single(l => l.Contains("AppId=", StringComparison.Ordinal)));
         Check("literal braces and quotes escaped", InnoSetupGenerator.Literal("x{app}\"y") == "x{{app}\"\"y");
-        Check("desktop default omitted", !script.Contains("autodesktop", StringComparison.Ordinal));
-        Check("postinstall launch defaults selected", script.Contains("postinstall skipifsilent", StringComparison.Ordinal) && !script.Contains("unchecked", StringComparison.Ordinal));
+        Check("desktop default unchecked task", script.Contains("Name: desktopicon; Description: \"Create a Desktop shortcut (optional)\"; Flags: unchecked", StringComparison.Ordinal));
+        Check("postinstall launch defaults selected", script.Contains("Flags: nowait postinstall skipifsilent", StringComparison.Ordinal));
         var metadata = PortableAppsGenerator.Generate(input, "[Details]\nPublisher=My Publisher\n[License]\nShareable=true\n");
         Check("portable existing publisher preserved", metadata.Contains("Publisher=My Publisher", StringComparison.Ordinal));
         Check("unknown licensing conservative", metadata.Contains("OpenSource=false", StringComparison.Ordinal) && metadata.Contains("Shareable=true", StringComparison.Ordinal));
@@ -75,6 +84,7 @@ internal static class Program
         var service = new BuildService(root, Path.Combine(evidence, "state"));
         await service.BuildAsync(input, CancellationToken.None);
         Check("real standard compile", File.Exists(input.OutputPath) && new FileInfo(input.OutputPath).Length > 10000);
+        await StandardOptionsChecks.CompileAsync(service, input, evidence, Check);
         var original = File.ReadAllBytes(input.OutputPath);
         using (var cancelled = new CancellationTokenSource()) { cancelled.Cancel(); try { await service.BuildAsync(input, cancelled.Token); } catch (OperationCanceledException) { } }
         Check("cancel preserves existing output", original.SequenceEqual(File.ReadAllBytes(input.OutputPath)));
@@ -97,6 +107,8 @@ internal static class Program
                 Check("portable payload retained " + relative, File.Exists(packed) && File.ReadAllBytes(path).SequenceEqual(File.ReadAllBytes(packed)));
             }
             Check("portable root native launcher retained", File.Exists(Path.Combine(extracted, PortableAppsGenerator.PackageId(input) + ".exe")));
+            Check("portable carries exact AppWrap MIT notice", File.ReadAllBytes(Path.Combine(root, "LICENSE")).SequenceEqual(File.ReadAllBytes(Path.Combine(extracted, "Other", "AppWrap-LICENSE.txt"))));
+            Check("portable carries exact native helper notices", File.ReadAllBytes(Path.Combine(root, "native", "UpgradeGuard", "README.md")).SequenceEqual(File.ReadAllBytes(Path.Combine(extracted, "Other", "AppWrap-NATIVE-NOTICES.txt"))));
         }
         File.Copy(Path.Combine(source, "bin", "Demo.exe"), Path.Combine(source, "bin", "Bob's.exe"));
         await service.BuildAsync(portable with { MainExecutable = "bin\\Bob's.exe", OutputPath = Path.Combine(evidence, "apostrophe.paf.exe") }, CancellationToken.None);
@@ -115,6 +127,7 @@ internal static class Program
         Check("source unchanged", Directory.GetFiles(source, "*", SearchOption.AllDirectories).Length == 5 && File.ReadAllText(Path.Combine(source, "readme.txt")).StartsWith("Owned compile-only", StringComparison.Ordinal));
         Check("successful staging cleanup", Directory.GetDirectories(Path.Combine(evidence, "state", "Builds")).Length == 0);
         await BatchChecks.Run(root, evidence, input, service, args.Length > 1 ? args[1] : null, Check);
+        await LongStageChecks.Run(root, evidence, input, Check);
         File.WriteAllText(Path.Combine(evidence, "results.json"), JsonSerializer.Serialize(new { passed = Passed.Count, checks = Passed, evidence, installersExecuted = false }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"RESULT: {Passed.Count} checks passed. Evidence: {evidence}");
     }

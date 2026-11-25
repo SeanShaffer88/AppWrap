@@ -24,7 +24,14 @@ public partial class MainWindow : Window
     private CancellationTokenSource? cancellation;
     private string StateDirectory => Path.Combine(AppContext.BaseDirectory, "Data");
     private OutputMode Mode => PortableMode.IsChecked == true ? OutputMode.PortableApps : OutputMode.Standard;
-    private int TotalSteps => UsesPortable ? 7 : 5;
+    private bool UsesStandard => Selection != BuildSelection.Portable;
+    private int BehaviorStep => 3;
+    private int ShortcutsStep => UsesPortable ? 4 : 3;
+    private int FinishStep => IsBoth ? 5 : 4;
+    private int IconStep => IsBoth ? 6 : UsesPortable ? 5 : 4;
+    private int TotalSteps => IsBoth ? 9 : UsesPortable ? 8 : 6;
+    private bool offerLaunch = true, offerStartup, offerWebsite;
+    private string developerWebsite = "";
 
     public MainWindow()
     {
@@ -45,7 +52,7 @@ public partial class MainWindow : Window
     }
 
     private static T Identify<T>(T control, string id) where T : DependencyObject
-    { AutomationProperties.SetAutomationId(control, id); AutomationProperties.SetName(control, id switch { "SourceFolder" => "Application folder", "AppName" => "App name", "AppVersion" => "Version", "MainExecutable" => "Application launch file", "OutputPath" => "Finished package", "BrowseSourceFolder" => "Choose application folder", "BrowseOutputPath" => "Choose save location", "StartMenuShortcut" => "Start Menu shortcut", "DesktopShortcut" => "Desktop shortcut", "LauncherIcon" => "App icon", "BrowseLauncherIcon" => "Choose app icon", "SidebarImage" => "Sidebar image", "BrowseSidebarImage" => "Choose sidebar image", "NamingStyle" => "Filename style", "OutputFolder" => "Output folder", "BrowseOutputFolder" => "Choose output folder", _ => id }); return control; }
+    { AutomationProperties.SetAutomationId(control, id); AutomationProperties.SetName(control, id switch { "SourceFolder" => "Application folder", "AppName" => "App name", "AppVersion" => "Version", "MainExecutable" => "Application launch file", "OutputPath" => "Finished package", "BrowseSourceFolder" => "Choose application folder", "BrowseOutputPath" => "Choose save location", "StartMenuShortcut" => "Start Menu shortcut", "DesktopShortcut" => "Desktop shortcut", "LauncherIcon" => "App icon", "BrowseLauncherIcon" => "Choose app icon", "SidebarImage" => "Sidebar image", "BrowseSidebarImage" => "Choose sidebar image", "NamingStyle" => "Filename style", "OutputFolder" => "Output folder", "BrowseOutputFolder" => "Choose output folder", "OfferLaunch" => "Offer to open the app (optional)", "OfferStartup" => "Offer Start with Windows (optional)", "OfferWebsite" => "Offer the developer website (optional)", "DeveloperWebsite" => "Developer website (optional)", _ => id }); return control; }
 
     private StackPanel Panel() { var panel = new StackPanel(); Page.Content = panel; return panel; }
     private TextBlock Label(string text) { var label = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 8) }; label.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); return label; }
@@ -72,7 +79,7 @@ public partial class MainWindow : Window
         if (optional && !string.IsNullOrEmpty(selected))
         {
             var remove = Identify(new Button { Content = "Use default", MinHeight = 24, FontSize = 12, Padding = new(8, 2, 8, 2), HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, -4, 0, 4) }, "Clear" + id);
-            remove.Click += (_, _) => { if (step == 4) icon = null; else sidebar = null; Render(); };
+            remove.Click += (_, _) => { if (step == IconStep) icon = null; else sidebar = null; Render(); };
             var heading = new Grid(); heading.ColumnDefinitions.Add(new()); heading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var currentLabel = panel.Children[0]; panel.Children.RemoveAt(0); heading.Children.Add(currentLabel); Grid.SetColumn(remove, 1); heading.Children.Add(remove); panel.Children.Insert(0, heading);
         }
@@ -81,13 +88,19 @@ public partial class MainWindow : Window
     private void Render()
     {
         Error.Text = ""; Details.Visibility = Visibility.Collapsed;
+        var compactFinish = step == FinishStep && UsesStandard && !busy && !finished;
+        Hint.Margin = compactFinish ? new(0, 6, 0, 8) : new(0, 8, 0, 16);
+        Steps.Margin = compactFinish ? new(0, 8, 0, 10) : new(0, 8, 0, 18);
         Formats.IsEnabled = !busy && !finished; Formats.Visibility = step == 0 && !busy && !finished ? Visibility.Visible : Visibility.Collapsed;
         BackButton.Visibility = step > 0 && !busy && !finished ? Visibility.Visible : Visibility.Collapsed;
         NextButton.Visibility = busy || finished ? Visibility.Collapsed : Visibility.Visible;
         NextButton.Content = step == TotalSteps - 1 ? IsBoth ? "Build both" : "Build" : "Next";
         CancelButton.Content = finished ? "Close" : busy ? "Cancel build" : "Cancel";
         StepLabel.Text = finished ? "READY TO SHARE" : busy ? "BUILDING YOUR PACKAGE" : $"STEP {step + 1} OF {TotalSteps}";
-        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", 3 => "Shortcuts", 4 when UsesPortable => "App icon", 5 when UsesPortable => "Sidebar image", _ => "Save & build" };
+        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", var s when UsesPortable && s == BehaviorStep => "Portable behavior", var s when s == ShortcutsStep => "Shortcuts", var s when UsesStandard && s == FinishStep => "Finish options", var s when UsesPortable && s == IconStep => "App icon", var s when UsesPortable && s == IconStep + 1 => "Sidebar image", _ => "Save & build" };
+        var workspaceActive = UsesPortable && step == BehaviorStep && configurePortable && !busy && !finished;
+        HeaderBar.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
+        QuestionBlock.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
         Steps.Maximum = TotalSteps; Steps.Value = step + 1; Steps.IsIndeterminate = busy;
         var panel = Panel();
         if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
@@ -104,7 +117,7 @@ public partial class MainWindow : Window
                 var information = new Grid(); information.ColumnDefinitions.Add(new() { Width = new GridLength(2, GridUnitType.Star) }); information.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
                 var namePanel = new StackPanel { Margin = new(0, 0, 16, 0) }; var versionPanel = new StackPanel(); Grid.SetColumn(versionPanel, 1);
                 namePanel.Children.Add(Label("App name"));
-                var appName = Identify(new TextBox { Text = name, MaxLength = 120 }, "AppName"); appName.TextChanged += (_, _) => { name = appName.Text; InvalidateOutputName(); }; namePanel.Children.Add(appName);
+                var appName = Identify(new TextBox { Text = name, MaxLength = 120 }, "AppName"); appName.TextChanged += (_, _) => { if (name != appName.Text) developerWebsite = ""; name = appName.Text; InvalidateOutputName(); }; namePanel.Children.Add(appName);
                 versionPanel.Children.Add(Label("Version"));
                 var appVersion = Identify(new TextBox { Text = version, MaxLength = 23 }, "AppVersion"); appVersion.TextChanged += (_, _) => { version = appVersion.Text; InvalidateOutputName(); }; versionPanel.Children.Add(appVersion);
                 information.Children.Add(namePanel); information.Children.Add(versionPanel); panel.Children.Add(information);
@@ -120,19 +133,26 @@ public partial class MainWindow : Window
                 }
                 catch (Exception ex) { ShowError(ex); }
                 break;
-            case 3:
-                Question.Text = "Where should shortcuts go?"; Hint.Text = IsBoth ? "These shortcuts apply to the installer. The portable package uses its menu entry." : Mode == OutputMode.Standard ? "Make your app easy to find after installation." : "Your package will appear in the portable app menu. Windows shortcuts are available for standard installers.";
-                var menu = Identify(new CheckBox { Content = "Start Menu", IsChecked = startMenu, IsEnabled = Mode == OutputMode.Standard }, "StartMenuShortcut"); menu.Checked += (_, _) => startMenu = true; menu.Unchecked += (_, _) => startMenu = false; panel.Children.Add(menu);
-                var desk = Identify(new CheckBox { Content = "Desktop", IsChecked = desktop, IsEnabled = Mode == OutputMode.Standard }, "DesktopShortcut"); desk.Checked += (_, _) => desktop = true; desk.Unchecked += (_, _) => desktop = false; panel.Children.Add(desk);
+            case var s when UsesPortable && s == BehaviorStep:
+                RenderPortableBehavior(panel); break;
+            case var s when s == ShortcutsStep:
+                Question.Text = "Where should shortcuts go?"; Hint.Text = UsesStandard ? "Choose initial selections. The installing user can change them.\nThese choices apply only to the standard installer." : "Your package appears in the portable app menu.\nWindows shortcuts apply only to standard installers.";
+                panel.Children.Add(Label("Shortcut defaults (optional)"));
+                var menu = Identify(new CheckBox { Content = "Start Menu (optional)", IsChecked = startMenu, IsEnabled = UsesStandard }, "StartMenuShortcut"); menu.Checked += (_, _) => startMenu = true; menu.Unchecked += (_, _) => startMenu = false; panel.Children.Add(menu);
+                var desk = Identify(new CheckBox { Content = "Desktop (optional)", IsChecked = desktop, IsEnabled = UsesStandard }, "DesktopShortcut"); desk.Checked += (_, _) => desktop = true; desk.Unchecked += (_, _) => desktop = false; panel.Children.Add(desk);
                 break;
-            case 4 when UsesPortable:
+            case var s when UsesStandard && s == FinishStep:
+                RenderFinishOptions(panel); break;
+            case var s when UsesPortable && s == IconStep:
                 Question.Text = "Choose an icon for your app."; Hint.Text = "Pick a picture, or click Next to use a simple default icon.";
                 SelectFile(panel, "App icon (optional)", "LauncherIcon", icon, () => BrowseImage(true), true); break;
-            case 5 when UsesPortable:
+            case var s when UsesPortable && s == IconStep + 1:
                 Question.Text = "Choose a sidebar image."; Hint.Text = "This picture appears beside the installation steps. Click Next to keep the default.";
                 SelectFile(panel, "Sidebar image (optional)", "SidebarImage", sidebar, () => BrowseImage(false), true); break;
             default: RenderOutput(panel); break;
         }
+        if (UsesPortable && step == BehaviorStep && configurePortable && !busy && !finished)
+            NextButton.IsEnabled = !profileState.HasErrors;
     }
 
     private async void BrowseSource()
@@ -140,7 +160,7 @@ public partial class MainWindow : Window
         if (scanning || busy) return;
         var dialog = new OpenFolderDialog { Title = "Choose your application folder", Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
-        source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); InvalidateOutputName(); executable = "";
+        source = dialog.FolderName; name = Path.GetFileName(Path.TrimEndingDirectorySeparator(source)); developerWebsite = ""; InvalidateOutputName(); executable = "";
         try { Scanning(true); executables = await Task.Run(() => InputRules.Executables(source)); if (executables.Count == 1) executable = executables[0]; Render(); }
         catch (Exception ex) { Render(); ShowError(ex); }
         finally { Scanning(false); }
@@ -174,6 +194,8 @@ public partial class MainWindow : Window
             if (step == 0) { Scanning(true); try { executables = await Task.Run(() => InputRules.Executables(source)); if (executables.Count == 0) throw new UserInputException("We couldn’t find an application file. Pick the folder containing your app’s .exe."); } finally { Scanning(false); } }
             if (step == 1) { PackageNaming.ValidateName(name.Trim()); InputRules.PackageVersion(version); }
             if (step == 2 && string.IsNullOrEmpty(executable)) throw new UserInputException("Choose the file that opens your app.");
+            if (UsesPortable && step == BehaviorStep && configurePortable && profileState.HasErrors) throw new UserInputException("Fix the portable profile problems shown on this step before continuing.");
+            if (step == FinishStep && UsesStandard) StandardInstallerOptions.Normalize(CurrentStandardOptions);
             if (step < TotalSteps - 1) { step++; Render(); return; }
             if (!await BuildSelectionAsync()) return;
             Render(); if (closingAfterCancel) Close();
@@ -186,7 +208,7 @@ public partial class MainWindow : Window
     {
         Error.Text = error is UserInputException or BuildFailureException ? error.Message : error is UnauthorizedAccessException ? "AppWrap cannot write here. Move AppWrap to a writable folder and choose a location you can save to." : "AppWrap couldn’t finish this step. Check that the folder and files are available, then try again.";
         DetailsText.Text = error is BuildFailureException failure ? failure.Details : error.ToString();
-        Details.Visibility = Visibility.Visible;
+        Details.Visibility = error is UserInputException ? Visibility.Collapsed : Visibility.Visible;
     }
     private void BackClick(object sender, RoutedEventArgs e) { if (step > 0) { step--; Render(); } }
     private void CancelClick(object sender, RoutedEventArgs e) { if (busy) cancellation?.Cancel(); else Close(); }

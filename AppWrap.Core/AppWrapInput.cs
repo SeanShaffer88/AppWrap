@@ -5,7 +5,8 @@ public enum OutputMode { Standard, PortableApps }
 public sealed record AppWrapInput(
     string SourceFolder, string AppName, string AppVersion, string MainExecutable,
     bool CreateStartMenuShortcut, bool CreateDesktopShortcut, string OutputPath,
-    OutputMode Mode = OutputMode.Standard, string? LauncherIconPath = null, string? SidebarImagePath = null);
+    OutputMode Mode = OutputMode.Standard, string? LauncherIconPath = null, string? SidebarImagePath = null,
+    StandardInstallerOptions? StandardOptions = null, PortableProfiles.PortableProfile? Profile = null);
 
 public sealed class UserInputException(string message) : Exception(message);
 
@@ -72,6 +73,7 @@ public static class InputRules
 
     public static void Validate(AppWrapInput input)
     {
+        if (input.Mode == OutputMode.Standard) StandardInstallerOptions.Normalize(input.StandardOptions);
         PackageNaming.ValidateName(input.AppName); PackageVersion(input.AppVersion);
         SafePath(input.SourceFolder); SafePath(input.OutputPath);
         if (!Directory.Exists(input.SourceFolder)) throw new UserInputException("Choose an application folder that still exists.");

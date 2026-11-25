@@ -1,0 +1,24 @@
+# Standard optional actions evidence
+
+Source contract: `docs/optional-installer-options-contract.md`. Public input is additive `StandardOptions`; portable members ignore it. Creator routes are Standard6/Both8/Portable7, with labeled optional shortcut defaults and completion offers. Website text is memory-only and cleared when source/application changes; no new persisted preference fields were added.
+
+Activated rules: `.agents/skills/api-and-interface-design/SKILL.md` requires additive optional public fields and boundary validation; `.codex/skills/ui-ux-pro-max/SKILL.md` requires visible input labels and coherent native semantics. Targeted WPF query returned no verified match; narrowed `input labels --domain ux` matched visible labels and associated form labels. Existing WPF design contract and approved exact680x560 mockup guide layout. No new libraries/dependencies.
+
+## Executed local gates
+
+- .NET SDK10.0.404 verified by actual CLI. GUI Release build exit0, runner `C:/Users/Sean Shaffer/Documents/DevTools/runs/20261121T223522907Z-6bc032bec44a42369228108b94cb67b3`.
+- Full regression exit0, **217 checks**, evidence `C:/Users/Sean Shaffer/Documents/Codex/2026-11-21/c/work/AppWrap-verification/20261121T223112-9ba3ec`; runner `C:/Users/Sean Shaffer/Documents/DevTools/runs/20261121T223110963Z-909e32cfd0dc43f283410234cad0a044`. Includes8 actual Inno optional-action combinations and Both preserving populated standard-only options while ignoring conflicting/invalid portable-member options. Later fail-closed path inspection changes were compiled in the subsequent extraction run; that run passed all8 standard compiles but stopped at the existing portable root-launcher extraction assertion (portable owner investigating). This is not a claimed full final pass.
+- Four actual0.2.0-preview NuGet modules packed and consumed from an independent project/cache, exit0; evidence `C:/Users/Sean Shaffer/Documents/Codex/2026-11-21/c/work/AppWrap-packed-consumer/bc83d23e692948af9ad09be981e3a5ae/result.json`. Consumer exercises additive defaults, normalized loopback URL and generated optional startup/website actions. The only later Core change shortened validation error text.
+- Actual reviewed native-probe standard fixtures compile exit0: `C:/Users/Sean Shaffer/Documents/Codex/2026-11-21/c/work/lifecycle-20261121-9f6a82c1/standard-options/artifacts.json`. Exact generated scripts, compiler logs and setups live under `artifacts/v1-all`, `v2-all` and `v3-no-offer`. Selected executable changes from `bin` to `bin-next`; last variant omits startup offer. Packages were not executed by the compilation gate.
+
+## Ownership source decisions
+
+Supported Inno `GetPreviousData` is available during uninstall and cached in `InitializeUninstall` before uninstall deletes its registry key. Official source `Setup.ScriptFunc.pas` handles uninstaller through `UninstallExpandedAppId`; `Setup.ScriptFunc.HelperFunc.pas` names previous-data values with the exact `Inno Setup CodeFile: ` prefix. Finish and silent-owned migration update those same current-user uninstall metadata values and verify write success. The previous root must match the engine's prior `Inno Setup: App Path`, and previous relative paths resolve within it. Plain-path checks reject reparse paths, noncanonical/ambiguous syntax, non-drive roots and every attributes error except ordinary file/path-not-found. Exact link ownership also requires canonical target/cwd and empty arguments.
+
+Sources: https://jrsoftware.org/inno-setup/documentation/topic_scriptevents.htm ; https://jrsoftware.org/inno-setup/documentation/topic_isxfunc_createshelllink.htm ; https://raw.githubusercontent.com/jrsoftware/issrc/main/Projects/Src/Setup.ScriptFunc.pas ; https://raw.githubusercontent.com/jrsoftware/issrc/main/Projects/Src/Setup.ScriptFunc.HelperFunc.pas ; https://raw.githubusercontent.com/jrsoftware/issrc/main/Projects/Src/Setup.Install.pas . These are official implementation/interface references; matching local compiler results establish syntax, while live behavior requires the remaining gates.
+
+## Remaining verification / bounded limitation
+
+Actual native completion layout/defaults, startup create/remove/migrate/foreign-preserve/uninstall, website local launch and silent no-launch gates, plus actual WPF minimumsize/theme/back-retention captures, remain pending host-operation lease and independent artifact approval. Broader physicalDPI/Narrator/other-Windows-version checks remain unperformed.
+
+Startup executable migration within the same owned installed root is implemented. If a user additionally relocates the installation root and a startup migration fails or Finish is cancelled, the old link is preserved; conservative uninstall root validation may leave that old-root startup link. Cross-root relocation cleanup is deferred rather than treating arbitrary prior absolute roots as trusted.

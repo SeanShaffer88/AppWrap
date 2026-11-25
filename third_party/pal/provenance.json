@@ -1,0 +1,10 @@
+{
+  "version": "2.2.9",
+  "pafSha256": "7bc93e47b885d5e953fa2082a2e65169ae98128026ac4d747f774a23bd01345b",
+  "pafArchive": "PortableApps.comLauncher_2.2.9.paf.exe",
+  "extractedFiles": 930,
+  "nsisVersion": "v2.46.5-Unicode",
+  "makensisSha256": "47cd625d2d90f0cfdff411ba18c39c88ab7e9b28730fc81e5e14ed66ead6fb21",
+  "source": "https://portableapps.com/apps/development/portableapps.com_launcher",
+  "note": "Backend binaries are prepared locally by tools/Prepare-PalBackend.ps1 and are not committed."
+}
