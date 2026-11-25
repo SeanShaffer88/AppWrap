@@ -6,13 +6,55 @@ using System.Text;
 namespace AppWrap.Build;
 internal static class PortableBuild
 {
+    /// <summary>
+    /// The guard helper's location inside a PAF package folder, written package-relative
+    /// (the upstream installer template resolves its own source files the same way from
+    /// App\installer, the same depth below the package root as Other\Source). The compiled
+    /// .paf.exe flow instead embeds the helper from a build-machine staging path, because
+    /// AppWrap's packaging builder compiles the folder immediately on that machine.
+    /// </summary>
+    internal const string PafGuardHelperPath = "..\\..\\Other\\Source\\AppWrap.UpgradeGuard.exe";
+
     public static async Task<string> BuildAsync(AppWrapInput input, string payload, string stage, string baseDirectory, CancellationToken token)
+    {
+        var package = await StagePackageAsync(input, payload, stage, baseDirectory, token, pafPackage: false, compileLauncher: true).ConfigureAwait(false);
+        var backend = Path.Combine(stage, "builder");
+        if (input.SidebarImagePath != null) ImageAssets.WriteSidebar(input.SidebarImagePath, Path.Combine(backend, "App", "installer", "PortableApps.comInstaller.bmp"));
+        var result = await ProcessRunner.RunAsync(Path.Combine(backend, "AppWrapPackagingBuilder.exe"), [package], backend, token).ConfigureAwait(false);
+        var logPath = Path.Combine(backend, "Data", "PortableApps.comInstallerLog.txt");
+        var log = await BackendLog.ReadAsync(logPath, token).ConfigureAwait(false);
+        var artifacts = Directory.GetFiles(stage, "*.paf.exe", SearchOption.TopDirectoryOnly);
+        if (result.ExitCode != 0 || artifacts.Length != 1) throw new BuildFailureException("AppWrap couldn’t build the portable package. Check the app folder and try again.", $"Builder exit code: {result.ExitCode}\n{result.Log}\n{log}");
+        return artifacts[0];
+    }
+
+    /// <summary>
+    /// Builds a PAF Package: the same staged portable tree as the compiled portable
+    /// package, left as a folder for the official PortableApps.com Installer to
+    /// consume unchanged. No AppWrap packaging-compiler step runs; the folder is the
+    /// output. See docs/PAF-COMPLIANCE.md for the exact relationship.
+    /// </summary>
+    public static Task<string> BuildPafPackageAsync(AppWrapInput input, string payload, string stage, string baseDirectory, CancellationToken token) =>
+        StagePackageAsync(input, payload, stage, baseDirectory, token, pafPackage: true, compileLauncher: true);
+
+    /// <summary>
+    /// Assembles the canonical portable package tree under <c>stage/portable</c>:
+    /// payload, generated appinfo.ini and installer.ini, launcher configuration and
+    /// (when <paramref name="compileLauncher"/>) the compiled root launcher. The two
+    /// outputs differ only in what a folder consumer needs: a PAF package also carries
+    /// an empty Data placeholder and a self-contained upgrade-guard helper beside its
+    /// hook (the compiled flow embeds the helper from the staging path instead).
+    /// Launcher compilation uses the pinned Windows backends; checks pass
+    /// <paramref name="compileLauncher"/>: false to verify the tree itself anywhere.
+    /// </summary>
+    internal static async Task<string> StagePackageAsync(AppWrapInput input, string payload, string stage, string baseDirectory, CancellationToken token, bool pafPackage, bool compileLauncher)
     {
         var sourceHooks = Path.Combine(payload, "Other", "Source");
         if (Directory.Exists(sourceHooks) && Directory.EnumerateFiles(sourceHooks, "*", SearchOption.AllDirectories).Any(p => Path.GetExtension(p).Equals(".nsh", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(p).Equals(".nsi", StringComparison.OrdinalIgnoreCase)))
             throw new UserInputException("This app contains custom packaging instructions. Choose its application folder without those instructions.");
         var package = Path.Combine(stage, "portable");
         Directory.CreateDirectory(Path.Combine(package, "App"));
+        if (pafPackage) Directory.CreateDirectory(Path.Combine(package, "Data"));
         var previousInfo = Path.Combine(payload, "App", "AppInfo", "appinfo.ini");
         if (File.Exists(previousInfo) && new FileInfo(previousInfo).Length > 65536) throw new UserInputException("The app's existing package details are too large.");
         var existing = File.Exists(previousInfo) ? await File.ReadAllTextAsync(previousInfo, token).ConfigureAwait(false) : null;
@@ -36,8 +78,18 @@ internal static class PortableBuild
         using (var resource = typeof(PortableBuild).Assembly.GetManifestResourceStream("AppWrap.UpgradeGuard.exe") ?? throw new BuildFailureException("A packaging component is missing.", "Missing embedded upgrade guard."))
         using (var guardFile = File.Create(guardPath))
             await resource.CopyToAsync(guardFile, token).ConfigureAwait(false);
+        // A folder consumed later by the official installer cannot reference the
+        // staging path: the helper ships beside the hook and the hook addresses it
+        // package-relatively. The compiled flow keeps the staging path, which its
+        // packaging builder resolves during the same build.
+        string guardHelperPath = guardPath;
+        if (pafPackage)
+        {
+            File.Copy(guardPath, Path.Combine(package, "Other", "Source", "AppWrap.UpgradeGuard.exe"));
+            guardHelperPath = PafGuardHelperPath;
+        }
         // These settings are coupled to the trusted embedded guard. No caller-supplied hook is accepted.
-        await File.WriteAllTextAsync(Path.Combine(package, "Other", "Source", "PortableApps.comInstallerCustom.nsh"), UpgradeGuardGenerator.Generate(input, guardPath), new UTF8Encoding(true), token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(package, "Other", "Source", "PortableApps.comInstallerCustom.nsh"), UpgradeGuardGenerator.Generate(input, guardHelperPath), new UTF8Encoding(true), token).ConfigureAwait(false);
         // A Pal profile replaces the basic launch shim with a real compiled PAL launcher.
         // PackagingOnly (or no profile) keeps the existing shim path unchanged below.
         PortableProfile? palProfile = input.Profile is { ExecutionKind: PortableExecutionKind.Pal } profile ? profile : null;
@@ -76,6 +128,7 @@ internal static class PortableBuild
             launcherText = PortableLauncherGenerator.Generate(input, palProfile);
             await File.WriteAllTextAsync(Path.Combine(launcherDir, launcherFileName), launcherText, new UTF8Encoding(true), token).ConfigureAwait(false);
         }
+        if (!compileLauncher) return package;
         var backend = Path.Combine(stage, "builder");
         var installedBackend = Path.Combine(baseDirectory, "third_party", "portableapps");
         if (!File.Exists(Path.Combine(installedBackend, "AppWrapPackagingBuilder.exe"))) throw new BuildFailureException("A packaging component is missing. Download a complete copy of AppWrap and try again.", "Missing portable packaging backend.");
@@ -104,13 +157,7 @@ internal static class PortableBuild
             var shim = await ProcessRunner.RunAsync(Path.Combine(backend, "App", "nsis", "makensis.exe"), ["/V2", shimSource], stage, token).ConfigureAwait(false);
             if (shim.ExitCode != 0) throw new BuildFailureException("AppWrap couldn’t prepare the app's portable launch file. Check the app folder and try again.", $"Launcher compiler exit code: {shim.ExitCode}\n{shim.Log}");
         }
-        if (input.SidebarImagePath != null) ImageAssets.WriteSidebar(input.SidebarImagePath, Path.Combine(backend, "App", "installer", "PortableApps.comInstaller.bmp"));
-        var result = await ProcessRunner.RunAsync(Path.Combine(backend, "AppWrapPackagingBuilder.exe"), [package], backend, token).ConfigureAwait(false);
-        var logPath = Path.Combine(backend, "Data", "PortableApps.comInstallerLog.txt");
-        var log = await BackendLog.ReadAsync(logPath, token).ConfigureAwait(false);
-        var artifacts = Directory.GetFiles(stage, "*.paf.exe", SearchOption.TopDirectoryOnly);
-        if (result.ExitCode != 0 || artifacts.Length != 1) throw new BuildFailureException("AppWrap couldn’t build the portable package. Check the app folder and try again.", $"Builder exit code: {result.ExitCode}\n{result.Log}\n{log}");
-        return artifacts[0];
+        return package;
     }
 
     private static void Copy(string source, string destination, CancellationToken token)

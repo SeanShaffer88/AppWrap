@@ -10,7 +10,7 @@
           <StackPanel><TextBlock Text="AppWrap" FontSize="25" FontWeight="SemiBold"/><TextBlock Text="Your app. Ready to share." FontSize="13" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/></StackPanel>
         </StackPanel>
         <Border Grid.Column="1" x:Name="Formats" Padding="4" CornerRadius="12" Background="{DynamicResource InputSurface}" VerticalAlignment="Center">
-          <StackPanel Orientation="Horizontal"><RadioButton x:Name="StandardMode" Content="Installer" Style="{DynamicResource FormatChoice}" IsChecked="True" Checked="ModeChanged" AutomationProperties.AutomationId="ModeStandard"/><RadioButton x:Name="PortableMode" Content="Portable app" Style="{DynamicResource FormatChoice}" Checked="ModeChanged" AutomationProperties.AutomationId="ModePortable"/><RadioButton x:Name="BothMode" Content="Both" Style="{DynamicResource FormatChoice}" Checked="ModeChanged" AutomationProperties.AutomationId="ModeBoth"/></StackPanel>
+          <StackPanel Orientation="Horizontal"><RadioButton x:Name="StandardMode" Content="Installer" Style="{DynamicResource FormatChoice}" IsChecked="True" Checked="ModeChanged" AutomationProperties.AutomationId="ModeStandard"/><RadioButton x:Name="PortableMode" Content="Portable app" Style="{DynamicResource FormatChoice}" Checked="ModeChanged" AutomationProperties.AutomationId="ModePortable"/><RadioButton x:Name="BothMode" Content="Both" Style="{DynamicResource FormatChoice}" Checked="ModeChanged" AutomationProperties.AutomationId="ModeBoth"/><RadioButton x:Name="PafMode" Content="PAF Package" Style="{DynamicResource FormatChoice}" Checked="ModeChanged" AutomationProperties.AutomationId="ModePaf"/></StackPanel>
         </Border>
       </Grid>
     </Border>

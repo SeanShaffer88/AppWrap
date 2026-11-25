@@ -23,13 +23,13 @@ public partial class MainWindow : Window
     private bool startMenu = true, desktop, busy, finished, closingAfterCancel;
     private CancellationTokenSource? cancellation;
     private string StateDirectory => Path.Combine(AppContext.BaseDirectory, "Data");
-    private OutputMode Mode => PortableMode.IsChecked == true ? OutputMode.PortableApps : OutputMode.Standard;
-    private bool UsesStandard => Selection != BuildSelection.Portable;
+    private OutputMode Mode => PafMode.IsChecked == true ? OutputMode.PafPackage : PortableMode.IsChecked == true ? OutputMode.PortableApps : OutputMode.Standard;
+    private bool UsesStandard => Selection is BuildSelection.Standard or BuildSelection.Both;
     private int BehaviorStep => 3;
     private int ShortcutsStep => UsesPortable ? 4 : 3;
     private int FinishStep => IsBoth ? 5 : 4;
     private int IconStep => IsBoth ? 6 : UsesPortable ? 5 : 4;
-    private int TotalSteps => IsBoth ? 9 : UsesPortable ? 8 : 6;
+    private int TotalSteps => IsBoth ? 9 : IsPaf ? 7 : UsesPortable ? 8 : 6;
     private bool offerLaunch = true, offerStartup, offerWebsite;
     private string developerWebsite = "";
 
@@ -97,13 +97,13 @@ public partial class MainWindow : Window
         NextButton.Content = step == TotalSteps - 1 ? IsBoth ? "Build both" : "Build" : "Next";
         CancelButton.Content = finished ? "Close" : busy ? "Cancel build" : "Cancel";
         StepLabel.Text = finished ? "READY TO SHARE" : busy ? "BUILDING YOUR PACKAGE" : $"STEP {step + 1} OF {TotalSteps}";
-        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", var s when UsesPortable && s == BehaviorStep => "Portable behavior", var s when s == ShortcutsStep => "Shortcuts", var s when UsesStandard && s == FinishStep => "Finish options", var s when UsesPortable && s == IconStep => "App icon", var s when UsesPortable && s == IconStep + 1 => "Sidebar image", _ => "Save & build" };
+        StepTopic.Text = finished || busy ? "" : step switch { 0 => "Application", 1 => "App details", 2 => "Launch file", var s when UsesPortable && s == BehaviorStep => "Portable behavior", var s when s == ShortcutsStep => "Shortcuts", var s when UsesStandard && s == FinishStep => "Finish options", var s when UsesPortable && s == IconStep => "App icon", var s when UsesPortable && !IsPaf && s == IconStep + 1 => "Sidebar image", _ => "Save & build" };
         var workspaceActive = UsesPortable && step == BehaviorStep && configurePortable && !busy && !finished;
         HeaderBar.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
         QuestionBlock.Visibility = workspaceActive ? Visibility.Collapsed : Visibility.Visible;
         Steps.Maximum = TotalSteps; Steps.Value = step + 1; Steps.IsIndeterminate = busy;
         var panel = Panel();
-        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
+        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
         if (configOpen && configWorkspace is not null) { RenderProjectConfig(panel); return; }
         switch (step)
@@ -153,7 +153,7 @@ public partial class MainWindow : Window
             case var s when UsesPortable && s == IconStep:
                 Question.Text = "Choose an icon for your app."; Hint.Text = "Pick a picture, or click Next to use a simple default icon.";
                 SelectFile(panel, "App icon (optional)", "LauncherIcon", icon, () => BrowseImage(true), true); break;
-            case var s when UsesPortable && s == IconStep + 1:
+            case var s when UsesPortable && !IsPaf && s == IconStep + 1:
                 Question.Text = "Choose a sidebar image."; Hint.Text = "This picture appears beside the installation steps. Click Next to keep the default.";
                 SelectFile(panel, "Sidebar image (optional)", "SidebarImage", sidebar, () => BrowseImage(false), true); break;
             default: RenderOutput(panel); break;
@@ -190,9 +190,9 @@ public partial class MainWindow : Window
 
     private void BrowseOutput()
     {
-        if (IsBoth)
+        if (FolderDestination)
         {
-            var folder = new OpenFolderDialog { Title = "Choose a folder for both packages", InitialDirectory = outputFolder };
+            var folder = new OpenFolderDialog { Title = IsPaf ? "Choose a folder for the PAF package" : "Choose a folder for both packages", InitialDirectory = outputFolder };
             if (folder.ShowDialog(this) == true) { outputFolder = folder.FolderName; output = ""; destinationChosen = true; Render(); }
             return;
         }

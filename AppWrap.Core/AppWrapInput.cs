@@ -1,6 +1,6 @@
 namespace AppWrap.Core;
 
-public enum OutputMode { Standard, PortableApps }
+public enum OutputMode { Standard, PortableApps, PafPackage }
 
 public sealed record AppWrapInput(
     string SourceFolder, string AppName, string AppVersion, string MainExecutable,
@@ -83,8 +83,22 @@ public static class InputRules
         SafePath(Path.Combine(input.SourceFolder, input.MainExecutable));
         if (IsWithin(input.OutputPath, input.SourceFolder) || string.Equals(Path.GetFullPath(input.OutputPath), Path.GetFullPath(input.SourceFolder), StringComparison.OrdinalIgnoreCase))
             throw new UserInputException("Save your package outside the application folder.");
-        if (!input.OutputPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) throw new UserInputException("Save the package with an .exe file name.");
-        if (!Directory.Exists(Path.GetDirectoryName(Path.GetFullPath(input.OutputPath)))) throw new UserInputException("Choose an existing folder for the finished package.");
+        if (input.Mode == OutputMode.PafPackage)
+        {
+            // A PAF package destination is a folder the official PortableApps.com
+            // Installer will consume. Committing replaces the folder, so it must not
+            // be an .exe file name, must not already be a file, and must not contain
+            // the application folder itself.
+            if (input.OutputPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) throw new UserInputException("Save the PAF package as a folder, not an .exe file name.");
+            if (File.Exists(input.OutputPath)) throw new UserInputException("A file already uses the PAF package folder name. Choose another destination.");
+            if (IsWithin(input.SourceFolder, input.OutputPath)) throw new UserInputException("Save the PAF package in a folder that does not contain the application folder.");
+            if (!Directory.Exists(Path.GetDirectoryName(Path.GetFullPath(input.OutputPath)))) throw new UserInputException("Choose an existing folder for the finished package.");
+        }
+        else
+        {
+            if (!input.OutputPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) throw new UserInputException("Save the package with an .exe file name.");
+            if (!Directory.Exists(Path.GetDirectoryName(Path.GetFullPath(input.OutputPath)))) throw new UserInputException("Choose an existing folder for the finished package.");
+        }
         foreach (var image in new[] { input.LauncherIconPath, input.SidebarImagePath })
             if (!string.IsNullOrEmpty(image)) { SafePath(image); if (!File.Exists(image)) throw new UserInputException("Choose an image that still exists, or skip it."); }
     }

@@ -32,6 +32,17 @@ public static class PackageNaming
         return fileName;
     }
 
+    /// <summary>
+    /// The canonical PAF folder name for an app: its AppID. This is the same identity
+    /// PortableAppsGenerator.PackageId derives for package metadata, so the folder a
+    /// PAF Package build creates is named exactly what its appinfo.ini declares.
+    /// </summary>
+    public static string GetFolderName(string name)
+    {
+        ValidateName(name);
+        return InputRules.SafeId(name).Replace("-", "", StringComparison.Ordinal) + "Portable";
+    }
+
     public static void ValidateName(string name)
     {
         InputRules.Text(name, "name");
