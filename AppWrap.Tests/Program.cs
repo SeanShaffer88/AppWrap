@@ -13,6 +13,27 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Phase 4 test-harness fixtures: when this executable is copied under a
+        // Fixture* name into a package folder, it plays the packaged app for the
+        // real (Windows-only) harness checks in TestHarnessAsyncChecks. The
+        // harness launches it with no arguments, so dispatch is by file name.
+        var selfName = Path.GetFileNameWithoutExtension(Environment.ProcessPath!);
+        if (selfName.StartsWith("FixtureClean", StringComparison.Ordinal))
+        {
+            Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "Data"));
+            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "Data", "settings.ini"), "clean portable fixture");
+            return 0;
+        }
+        if (selfName.StartsWith("FixtureLeaky", StringComparison.Ordinal))
+        {
+            Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "Data"));
+            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "Data", "settings.ini"), "leaky portable fixture");
+            var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            Directory.CreateDirectory(Path.Combine(roaming, "FixtureApp"));
+            File.WriteAllText(Path.Combine(roaming, "FixtureApp", "settings.ini"), "leaked into the profile");
+            return 0;
+        }
+        if (selfName.StartsWith("FixtureHang", StringComparison.Ordinal)) { Thread.Sleep(30000); return 0; }
         if (args.FirstOrDefault() == "--hold") { Console.WriteLine("owned child started"); Thread.Sleep(30000); return 0; }
         if (args.FirstOrDefault() == "--descendant") { Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, ArgumentList = { "--hold" } }); return 0; }
         if (args.FirstOrDefault() == "--flood") { Console.Write(new string('x', 200000)); Console.Error.Write(new string('y', 200000)); return 0; }
@@ -129,6 +150,8 @@ internal static class Program
         Check("source unchanged", Directory.GetFiles(source, "*", SearchOption.AllDirectories).Length == 5 && File.ReadAllText(Path.Combine(source, "readme.txt")).StartsWith("Owned compile-only", StringComparison.Ordinal));
         Check("successful staging cleanup", Directory.GetDirectories(Path.Combine(evidence, "state", "Builds")).Length == 0);
         await BatchChecks.Run(root, evidence, input, service, args.Length > 1 ? args[1] : null, Check);
+        TestHarnessChecks.Run(root, evidence, Check, Reject);
+        await TestHarnessAsyncChecks.RunAsync(evidence, Check);
         await PafPackageChecks.RunAsync(root, evidence, input, Check, Reject);
         await LongStageChecks.Run(root, evidence, input, Check);
         File.WriteAllText(Path.Combine(evidence, "results.json"), JsonSerializer.Serialize(new { passed = Passed.Count, checks = Passed, evidence, installersExecuted = false }, new JsonSerializerOptions { WriteIndented = true }));

@@ -30,6 +30,8 @@ Standard installers use a stable app-name-derived per-user installation identity
 
 Choosing a folder now records an `appwrap.project.json` project file at its root (schema, targeted PAF version, source snapshot hash, build history, saved choices; see `docs/project-model.md`). The file is AppWrap bookkeeping only: it is excluded from every package payload, and folders without one behave exactly as before. The wizard's project configuration panel edits the project's appinfo, launcher and installer configuration with the format checks shown inline. Advanced mode is off by default, is recorded per project in that file, and only unlocks direct text editing of the project's own `Custom.nsh` and `PortableApps.comInstallerCustom.nsh`; it changes no packaging behaviour — source build scripts in a payload are still rejected and custom code from a source folder is still never executed or compiled into a package.
 
+After a portable or PAF Package build, the wizard offers a **Test package…** panel (see `docs/TEST-HARNESS.md`): an explicit, separate action that runs the packaged app once in a throwaway sandbox with a redirected profile, reports where it wrote in `test-report.json`, and flags profile writes as portability violations. Builds never execute a packaged app — testing happens only from that panel — and detection is coarse snapshot diffing: the registry is not observed and no clean-machine guarantee is made.
+
 ## Build and verify
 
 Windows x64, PowerShell 7, .NET SDK 10.0.404 or a compatible .NET 10 SDK and the pinned backend folders are required. No third-party NuGet runtime packages are used.
