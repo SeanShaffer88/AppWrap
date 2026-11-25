@@ -1,13 +1,9 @@
 using AppWrap.Core;
 using AppWrap.Core.PortableProfiles;
+using AppWrap.Core.Projects;
 using AppWrap.Generators;
 
 namespace AppWrap.Build;
-
-public sealed class BuildFailureException(string message, string details) : Exception(message)
-{
-    public string Details { get; } = details;
-}
 
 public sealed record BuildResult(string OutputPath, string Sha256, long Bytes, string? CleanupWarning = null);
 
@@ -118,6 +114,11 @@ public sealed partial class BuildService(string baseDirectory, string stateDirec
             {
                 token.ThrowIfCancellationRequested();
                 InputRules.SafePath(entry);
+                // The AppWrap project file at the source root is tooling state, not
+                // payload: it records the source snapshot hash and build history and
+                // must never be swept into a package. Only the root file is excluded;
+                // nested files with the same name remain ordinary payload.
+                if (depth == 0 && !Directory.Exists(entry) && ProjectStore.IsProjectFileName(Path.GetFileName(entry))) continue;
                 if (++entries > 50000) throw new UserInputException("Choose a smaller app folder (up to 50,000 files and folders).");
                 var target = Path.Combine(to, Path.GetFileName(entry));
                 if (Directory.Exists(entry)) Copy(entry, target, depth + 1);

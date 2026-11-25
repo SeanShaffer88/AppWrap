@@ -28,6 +28,8 @@ Local regular paths only; linked/reparse paths are rejected. Sources are bounded
 
 Standard installers use a stable app-name-derived per-user installation identity, offer application launch on completion and ask the installer engine to close files in use. Runtime install/upgrade/uninstall, clean-machine compatibility and arbitrary application portability require testing; compilation and static archive checks do not establish them. Portable upgrades preserve unlisted files in `App`/`Other`/`Data`; files shipped with the same path can still be replaced, so application-specific settings behavior remains the app's responsibility.
 
+Choosing a folder now records an `appwrap.project.json` project file at its root (schema, targeted PAF version, source snapshot hash, build history, saved choices; see `docs/project-model.md`). The file is AppWrap bookkeeping only: it is excluded from every package payload, folders without one behave exactly as before, and there is still no project editor, script support or advanced mode.
+
 ## Build and verify
 
 Windows x64, PowerShell 7, .NET SDK 10.0.404 or a compatible .NET 10 SDK and the pinned backend folders are required. No third-party NuGet runtime packages are used.
