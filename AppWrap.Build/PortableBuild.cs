@@ -19,7 +19,8 @@ internal static class PortableBuild
         Directory.Move(payload, Path.Combine(package, "App", "Payload"));
         var metadataDir = Path.Combine(package, "App", "AppInfo"); Directory.CreateDirectory(metadataDir);
         var infoPath = Path.Combine(metadataDir, "appinfo.ini");
-        await File.WriteAllTextAsync(infoPath, PortableAppsGenerator.Generate(input, existing), new UTF8Encoding(true), token).ConfigureAwait(false);
+        var appInfoText = PortableAppsGenerator.Generate(input, existing);
+        await File.WriteAllTextAsync(infoPath, appInfoText, new UTF8Encoding(true), token).ConfigureAwait(false);
         // Never execute source-provided download actions, installer settings, or custom hooks.
         ImageAssets.WriteIcons(input.LauncherIconPath, metadataDir);
         if (!File.Exists(Path.Combine(package, "help.html")))
@@ -61,6 +62,8 @@ internal static class PortableBuild
             // and reconciling profile metadata into it is a P5 workspace concern.
         }
         await File.WriteAllTextAsync(Path.Combine(metadataDir, "installer.ini"), installerText, new UTF8Encoding(true), token).ConfigureAwait(false);
+        string? launcherFileName = null;
+        string? launcherText = null;
         if (palProfile is not null)
         {
             var errors = PortableProfileValidator.Validate(palProfile).Where(d => d.Severity == ProfileSeverity.Error).ToList();
@@ -69,8 +72,9 @@ internal static class PortableBuild
                     string.Join(" ", errors.Take(5).Select(d => d.Message)) +
                     (errors.Count > 5 ? $" (+{errors.Count - 5} more problems)" : ""));
             var launcherDir = Path.Combine(metadataDir, "Launcher"); Directory.CreateDirectory(launcherDir);
-            await File.WriteAllTextAsync(Path.Combine(launcherDir, PortableAppsGenerator.PackageId(input) + ".ini"), PortableLauncherGenerator.Generate(input, palProfile), new UTF8Encoding(true), token).ConfigureAwait(false);
-            await File.WriteAllTextAsync(Path.Combine(package, "Other", "AppWrap-PAL-NOTICES.txt"), PalNotices(palProfile), new UTF8Encoding(true), token).ConfigureAwait(false);
+            launcherFileName = PortableAppsGenerator.PackageId(input) + ".ini";
+            launcherText = PortableLauncherGenerator.Generate(input, palProfile);
+            await File.WriteAllTextAsync(Path.Combine(launcherDir, launcherFileName), launcherText, new UTF8Encoding(true), token).ConfigureAwait(false);
         }
         var backend = Path.Combine(stage, "builder");
         var installedBackend = Path.Combine(baseDirectory, "third_party", "portableapps");
@@ -81,7 +85,17 @@ internal static class PortableBuild
             // The PAL compile needs only the staged package folder and produces the root
             // launcher inside it; it runs before the packaging builder, never instead of it.
             // Failure is fatal — a profile package never falls back to the basic shim.
+            var palBackend = PalCompiler.BackendRoot(baseDirectory);
             await PalCompiler.CompileAsync(input, palProfile, package, stage, baseDirectory, token).ConfigureAwait(false);
+            // P6: the compiled launcher is GPL-covered PAL code, so its corresponding
+            // source/license bundle is written into the package before the packaging
+            // builder runs. A backend too incomplete to bundle fails the build here,
+            // after the compile, rather than shipping a launcher without its source.
+            var bundle = await PalSourceBundle.WriteAsync(palBackend, package, palProfile,
+                new PalSourceBundle.GeneratedFiles(launcherFileName!, launcherText!, installerText, appInfoText),
+                PalCompiler.BuildArguments(input, palProfile, package, stage, palBackend), token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(package, "Other", "AppWrap-PAL-NOTICES.txt"),
+                PalSourceBundle.NoticesText(palProfile, bundle.GplTextBundled), new UTF8Encoding(true), token).ConfigureAwait(false);
         }
         else
         {
@@ -98,29 +112,6 @@ internal static class PortableBuild
         if (result.ExitCode != 0 || artifacts.Length != 1) throw new BuildFailureException("AppWrap couldn’t build the portable package. Check the app folder and try again.", $"Builder exit code: {result.ExitCode}\n{result.Log}\n{log}");
         return artifacts[0];
     }
-
-    private static string PalNotices(PortableProfile profile) => $"""
-        PortableApps.com Launcher (PAL) — generated package notices
-
-        This package's root launcher was compiled by AppWrap from the official
-        PortableApps.com Launcher (PAL) {profile.Engine.PalVersion} source, using the NSIS
-        {profile.Engine.NsisVersion} compiler bundled with that PAL release.
-
-        Pinned source archive: PortableApps.comLauncher_{profile.Engine.PalVersion}.paf.exe
-        Archive SHA-256: {profile.Engine.PalSha256}
-        Bundled makensis.exe SHA-256: {profile.Engine.NsisSha256}
-        Source: https://portableapps.com/apps/development/portableapps.com_launcher
-
-        The PortableApps.com Launcher is licensed under the GNU General Public License,
-        version 2 or (at your option) any later version (GPL-2.0-or-later). The compiled
-        launcher in this package is covered by that license; it is not covered by
-        AppWrap's MIT license.
-
-        The full corresponding-source bundle for the compiled launcher is a separate
-        distribution gate (P6). This notice alone does not satisfy source accompaniment
-        for public redistribution.
-
-        """;
 
     private static void Copy(string source, string destination, CancellationToken token)
     {

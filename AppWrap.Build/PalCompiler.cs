@@ -15,9 +15,25 @@ namespace AppWrap.Build;
 /// </summary>
 public static class PalCompiler
 {
+    /// <summary>The prepared pinned backend root beside AppWrap.</summary>
+    internal static string BackendRoot(string baseDirectory) => Path.Combine(baseDirectory, "third_party", "pal");
+
+    /// <summary>
+    /// The exact compiler argument array for a compile, built once here so the
+    /// compile itself and the P6 source bundle's build recipe can never drift apart.
+    /// </summary>
+    internal static string[] BuildArguments(AppWrapInput input, PortableProfile profile, string package, string stage, string backend)
+    {
+        var appId = PortableLauncherGenerator.AppId(input);
+        var namePortable = SafeName(input.AppName + " Portable");
+        var logPath = Path.Combine(stage, "pal-compiler.log");
+        return PalLaunchArguments.Build(backend, package, logPath, namePortable, appId, profile.Engine.PalVersion,
+            PortableLauncherGenerator.ConditionalDefines(profile));
+    }
+
     public static async Task<string> CompileAsync(AppWrapInput input, PortableProfile profile, string package, string stage, string baseDirectory, CancellationToken token)
     {
-        var backend = Path.Combine(baseDirectory, "third_party", "pal");
+        var backend = BackendRoot(baseDirectory);
         var compiler = Path.Combine(backend, "App", "NSIS", "makensis.exe");
         var script = Path.Combine(backend, "Other", "Source", "PortableApps.comLauncher.nsi");
         if (!File.Exists(compiler) || !File.Exists(script))
@@ -31,10 +47,8 @@ public static class PalCompiler
                 $"Pinned PAL compiler hash mismatch. Expected makensis.exe SHA-256 {EngineLock.Pinned.NsisSha256}, found {hash.ToLowerInvariant()}. The compiler was not run.");
 
         var appId = PortableLauncherGenerator.AppId(input);
-        var namePortable = SafeName(input.AppName + " Portable");
         var logPath = Path.Combine(stage, "pal-compiler.log");
-        var args = PalLaunchArguments.Build(backend, package, logPath, namePortable, appId, profile.Engine.PalVersion,
-            PortableLauncherGenerator.ConditionalDefines(profile));
+        var args = BuildArguments(input, profile, package, stage, backend);
         var result = await ProcessRunner.RunAsync(compiler, args, stage, token).ConfigureAwait(false);
         var log = await BackendLog.ReadAsync(logPath, token).ConfigureAwait(false);
         var launcher = Path.Combine(package, appId + ".exe");

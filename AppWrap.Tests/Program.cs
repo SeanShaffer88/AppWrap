@@ -37,6 +37,7 @@ internal static class Program
         NamingChecks.Run(Check, Reject);
         ProfileChecks.Run(Check, Reject);
         await PalChecks.RunAsync(root, evidence, input, Check, Reject);
+        await BundleChecks.RunAsync(evidence, Check);
         PlannerChecks.Run(Check, Reject);
         InstallerChecks.Run(Check, Reject);
         WorkspaceChecks.Run(Check, Reject);
