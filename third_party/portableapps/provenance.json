@@ -1,5 +1,5 @@
 {
-  "modifiedWizardSha256": "83A8E574F9E035E90A2C817C55703C19925D30584294C09D6ECC154CD0469793",
+  "modifiedWizardSha256": "1AFB3FDACADC9105783C57542408A78F1D705F652D6D6B46A94B51498EF86DF8",
   "version": "3.9.24",
   "modification": "Clearly renamed silent packaging wizard; exact original and modified source included. Official installer code unchanged.",
   "nsisVersion": "v3.13",
