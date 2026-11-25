@@ -62,6 +62,20 @@ and WPF layout on Windows **Unverified** (full record:
   output, the editor field catalogue and the capability catalog so a
   supported field cannot regress silently.
 
+### Command-line interface
+
+`AppWrap.Cli` exposes every wizard and Development Suite capability as
+commands — `build` (all four output modes), `project validate|info|create`,
+`config list|get|set`, `profile validate`, `test`, and `gui` — thin over the
+same Core/Build operations, with a `--json` envelope (result plus structured
+diagnostics), `--dry-run` builds, and a 0/2/3/4 exit-code contract, so
+scripts and local AI operators can drive AppWrap without the GUI. It ships
+beside `AppWrap.exe` in the same distribution folder and resolves backends
+the same way. **Configuration validated**: argument parsing, the JSON
+envelope, config round-trips, profile validation and dry-run builds are
+check-covered and smoke-run on a non-Windows host; real packaging runs on
+Windows **Unverified** (full reference: `docs/CLI.md`).
+
 ## Planned
 
 - **The `AppWrapPreMutation` gate.** The DownloadFiles, CopyLocalFiles and

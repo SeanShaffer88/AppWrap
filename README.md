@@ -16,6 +16,10 @@ Portable mode is for an application that already supports portable use. AppWrap 
 
 At installation, portable packages gracefully close the selected destination's main executable and AppWrap launcher before replacing payload files. Exact image paths determine ownership: another folder's same-name app is left running. Applications that refuse to close, have an unsaved-work prompt, or cannot be identified stop the upgrade after a bounded wait. Nothing is force-killed or restarted. Other child programs/services require application-specific handling. The official generated installer uses an original trusted AppWrap preinstall hook; arbitrary source hooks remain rejected. See `native/UpgradeGuard/README.md`.
 
+## Command line
+
+`AppWrap.Cli.exe` ships beside `AppWrap.exe` in the same folder and exposes every wizard and suite capability as commands — package a folder (`build`, all four modes), validate and inspect projects (`project validate|info|create`), read and edit project configuration (`config list|get|set`), validate portable profiles (`profile validate`), and run the test harness (`test`) — so scripts and local AI operators can drive AppWrap without the GUI. Every command accepts `--json` (one envelope object with the result and structured diagnostics) and `--verbose`; exit codes are 0 success, 2 usage error, 3 validation failed (nothing written), and 4 build/test failure. The CLI resolves its packaging backends from its own folder exactly like the GUI. Full reference: `docs/CLI.md`.
+
 ## Appearance and state
 
 Choose AppWrap, Catppuccin Mocha, Nord, Gruvbox Light or OLED Black in the Appearance list beside Cancel. These are native brush palettes; Windows high-contrast mode uses system colors. Window size, theme and preferred filename style are stored in `Data/window.json` beside AppWrap. Restoring bounds conservatively clamps to the primary monitor's work area, so secondary-monitor positions may move to the primary monitor after restart.
@@ -34,6 +38,7 @@ After a portable or PAF Package build, the wizard offers a **Test package…** p
 
 ## Documentation
 
+- `docs/CLI.md` — the command-line reference: every command, flag, exit code, JSON shape and example, written for script and AI operators.
 - `docs/PAF-COMPLIANCE.md` — how AppWrap's outputs relate to the official PortableApps.com toolchain: targeted format version, the appinfo/launcher/installer support matrices, and what is intentionally omitted or blocked.
 - `docs/TEST-HARNESS.md` — the explicit Test package action: sandbox, write detection, `test-report.json`, and its limits.
 - `docs/ROADMAP.md` — what is implemented, what is planned, and what is intentionally out of scope.

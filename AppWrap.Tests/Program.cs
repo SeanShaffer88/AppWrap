@@ -57,6 +57,7 @@ internal static class Program
         InputRules.Validate(input);
         NamingChecks.Run(Check, Reject);
         WizardChecks.Run(Check, Reject);
+        await CliChecks.RunAsync(evidence, Check, Reject);
         ProjectChecks.Run(evidence, Check, Reject);
         ProjectConfigChecks.Run(evidence, Check, Reject);
         ScaffoldChecks.Run(evidence, Check, Reject);
