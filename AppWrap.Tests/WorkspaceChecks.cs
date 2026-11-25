@@ -73,6 +73,7 @@ internal static class WorkspaceChecks
         ModeAndSession(check);
         CategoriesAndRows(check);
         Paging(check);
+        PagingSweep(check);
         Editing(check, reject);
         TextRoundtrip(check);
         BlockedAndDiagnostics(check);
@@ -166,6 +167,33 @@ internal static class WorkspaceChecks
         check("workspace page index clamps", clamped.Rows.Count == 2 && clamped.Rows[0].Key == "2");
         var empty = state.Page(ProfileCategory.TrustedExtensions, 0, 4);
         check("workspace empty page still has one page", empty.TotalCount == 0 && empty.PageCount == 1 && empty.Rows.Count == 0);
+    }
+
+    private static void PagingSweep(Action<string, bool> check)
+    {
+        // The wizard pages a category at a fixed size of 3 and clamps its
+        // current index against PageCount - 1 in the render path. That is
+        // only safe while Page keeps PageCount >= 1 and clamps negative
+        // and overflowing indexes for every row count, including zero —
+        // sweep the counts the grid can actually hold.
+        for (var count = 0; count <= 10; count++)
+        {
+            var state = new ProfileWorkspaceState();
+            state.SetMode(PortableExecutionKind.Pal);
+            var text = "[Environment]\n" + string.Concat(Enumerable.Range(1, count).Select(i => $"VAR{i}={i}\n"));
+            state.SetDocumentText(PortableDocumentKind.Launcher, text);
+            var expectedPages = Math.Max(1, (count + 2) / 3);
+            var negative = state.Page(ProfileCategory.EnvironmentLanguage, -1, 3);
+            var first = state.Page(ProfileCategory.EnvironmentLanguage, 0, 3);
+            var last = state.Page(ProfileCategory.EnvironmentLanguage, 999, 3);
+            check($"workspace paging sweep {count} rows",
+                state.Rows(ProfileCategory.EnvironmentLanguage).Count == count
+                && negative.PageCount == expectedPages && first.PageCount == expectedPages && last.PageCount == expectedPages
+                && negative.TotalCount == count && last.TotalCount == count
+                && negative.Rows.Count == first.Rows.Count
+                && first.Rows.Count == Math.Min(3, count)
+                && last.Rows.Count == (count == 0 ? 0 : (count - 1) % 3 + 1));
+        }
     }
 
     private static void Editing(Action<string, bool> check, Action<string, Action> reject)

@@ -30,5 +30,25 @@ internal static class NamingChecks
         reject("naming rejects unknown output mode", () => PackageNaming.GetFileName("Meadow", "1.0", (OutputMode)999));
         // Leading zeros are valid numeric input, but may not exceed a Windows component.
         reject("naming rejects oversized generated component", () => PackageNaming.GetFileName("Meadow", new string('0', 256), OutputMode.Standard));
+
+        // Regression pins for the mode-switch crash: PackageNaming is a
+        // build-time validator, so it must keep refusing the states the
+        // wizard renders through on its way to a build — a PAF Package has
+        // a folder destination, never a generated file name, and a blank
+        // or half-typed name/version has no file name yet. The wizard's
+        // render/reconcile path (MainWindow.TrySuggestedDestination)
+        // depends on these throws staying UserInputException so it can
+        // treat them as "no suggestion yet" instead of crashing.
+        reject("naming rejects a file name for paf package mode", () => PackageNaming.GetFileName("Meadow", "1.0", OutputMode.PafPackage));
+        reject("naming rejects a file name for paf package mode any style", () => PackageNaming.GetFileName("Meadow", "1.0", OutputMode.PafPackage, PackageNamingStyle.NameOnly));
+
+        // The PAF folder name is the folder-side counterpart: derivable
+        // for any valid name (including names whose file name needs the
+        // version), and refused — again as UserInputException — for the
+        // partial names a render can legitimately hold.
+        check("folder name ends in Portable", PackageNaming.GetFolderName("Meadow").EndsWith("Portable", StringComparison.Ordinal));
+        check("folder name strips spaces and punctuation", !PackageNaming.GetFolderName("Café Notes!").Any(c => c is ' ' or '-' or '!'));
+        foreach (var name in new[] { "", " ", "App.", "App ", "CON", "bad/name" })
+            reject("folder name rejects invalid name " + name, () => PackageNaming.GetFolderName(name));
     }
 }

@@ -29,6 +29,25 @@ public partial class MainWindow
     /// <summary>The destination AppWrap suggested at the last render — the baseline the reconciliation rule compares a chosen destination against.</summary>
     private string suggestedOutput = "";
     private string SuggestedDestination() => Path.Combine(outputFolder, GeneratedName(Mode));
+
+    /// <summary>
+    /// The destination AppWrap would suggest for the current fields, or
+    /// null while they cannot produce one. PackageNaming validates for a
+    /// finished build: it throws <see cref="UserInputException"/> on a
+    /// blank or invalid name or version, and it has no file name at all
+    /// for a PAF Package, whose destination is a folder. Mode switches,
+    /// name/version edits and renders all run on partially entered state,
+    /// so they go through this non-throwing form; the build path keeps
+    /// the strict validation. (Calling SuggestedDestination from the
+    /// ModeChanged handler made switching to PAF Package throw out of a
+    /// radio-button event and close the program.)
+    /// </summary>
+    private string? TrySuggestedDestination()
+    {
+        try { return IsPaf ? PafDestination : SuggestedDestination(); }
+        catch (UserInputException) { return null; }
+    }
+
     private void InvalidateOutputName()
     {
         // Name, version, mode or filename style changed, so the suggested
@@ -36,7 +55,12 @@ public partial class MainWindow
         // merely echoes the previous suggestion follows it; a diverged
         // custom path is the user's own text and is left alone, keeping
         // its folder. With no override there is nothing to reconcile.
-        var next = SuggestedDestination();
+        // While the fields cannot produce a suggestion yet (a mode switch
+        // before a name exists, a name being retyped), there is no new
+        // baseline to reconcile against: keep the chosen destination and
+        // clear the baseline until a suggestion exists again.
+        var next = TrySuggestedDestination();
+        if (next is null) { suggestedOutput = ""; return; }
         if (!string.IsNullOrEmpty(output))
         {
             var reconciled = WizardPaths.ReconcileSuggestion(output, suggestedOutput, next);
@@ -99,7 +123,7 @@ public partial class MainWindow
         }
         var location = new Grid(); location.ColumnDefinitions.Add(new()); location.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var value = FolderDestination ? outputFolder : SingleDestination;
-        suggestedOutput = SuggestedDestination();
+        suggestedOutput = TrySuggestedDestination() ?? "";
         var path = Identify(new TextBox { Text = value, ToolTip = "Type or paste a path, or use the button to browse", Style = null, BorderThickness = new(0), Background = Brushes.Transparent, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, FolderDestination ? "OutputFolder" : "OutputPath");
         path.SetResourceReference(Control.ForegroundProperty, "Text"); location.Children.Add(path);
         WirePathCommit(path, CommitOutputText);
@@ -116,7 +140,7 @@ public partial class MainWindow
     private void UpdateOutputPreview()
     {
         if (outputLocationDisplay != null) { outputLocationDisplay.Text = FolderDestination ? outputFolder : SingleDestination; outputLocationDisplay.ToolTip = "Type or paste a path, or use the button to browse"; }
-        suggestedOutput = SuggestedDestination();
+        suggestedOutput = TrySuggestedDestination() ?? "";
         foreach (var preview in filenamePreviews) { preview.Text.Text = IsBoth ? GeneratedName(preview.Mode) : IsPaf ? PafFolderName : Path.GetFileName(SingleDestination); preview.Text.ToolTip = preview.Text.Text; }
     }
 
