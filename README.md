@@ -1,6 +1,6 @@
 # AppWrap
 
-A native Windows wizard that wraps an application folder into a standard installer or a PortableApps.com-format package. Choose a folder, answer six, seven or eight questions, and build. No project editor, scripts, advanced mode, accounts, downloads or telemetry in the application.
+A native Windows wizard that wraps an application folder into a standard installer or a PortableApps.com-format package. Choose a folder, answer six, seven or eight questions, and build. No accounts, downloads or telemetry in the application; project editing is configuration bookkeeping only, and custom code stays behind an off-by-default Advanced mode (see Limits).
 
 ## Run
 
@@ -28,7 +28,7 @@ Local regular paths only; linked/reparse paths are rejected. Sources are bounded
 
 Standard installers use a stable app-name-derived per-user installation identity, offer application launch on completion and ask the installer engine to close files in use. Runtime install/upgrade/uninstall, clean-machine compatibility and arbitrary application portability require testing; compilation and static archive checks do not establish them. Portable upgrades preserve unlisted files in `App`/`Other`/`Data`; files shipped with the same path can still be replaced, so application-specific settings behavior remains the app's responsibility.
 
-Choosing a folder now records an `appwrap.project.json` project file at its root (schema, targeted PAF version, source snapshot hash, build history, saved choices; see `docs/project-model.md`). The file is AppWrap bookkeeping only: it is excluded from every package payload, folders without one behave exactly as before, and there is still no project editor, script support or advanced mode.
+Choosing a folder now records an `appwrap.project.json` project file at its root (schema, targeted PAF version, source snapshot hash, build history, saved choices; see `docs/project-model.md`). The file is AppWrap bookkeeping only: it is excluded from every package payload, and folders without one behave exactly as before. The wizard's project configuration panel edits the project's appinfo, launcher and installer configuration with the format checks shown inline. Advanced mode is off by default, is recorded per project in that file, and only unlocks direct text editing of the project's own `Custom.nsh` and `PortableApps.comInstallerCustom.nsh`; it changes no packaging behaviour — source build scripts in a payload are still rejected and custom code from a source folder is still never executed or compiled into a package.
 
 ## Build and verify
 
