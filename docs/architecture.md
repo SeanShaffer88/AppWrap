@@ -211,9 +211,12 @@ entry.
 
 ## Themes
 
-Five native WPF brush palettes (AppWrap, Catppuccin Mocha, Nord, Gruvbox
-Light, OLED Black) share layout, control behaviour, validation and backend
-orchestration; Windows high-contrast mode uses system colors. Theme choice
+Seven native WPF brush palettes share layout, control behaviour, validation
+and backend orchestration. The default is FluentGruv (with FluentGruv Light
+beside it), implementing the FluentGruv design system v1.3.0 token for
+token — see `docs/DESIGN.md`; AppWrap, Catppuccin Mocha, Nord, Gruvbox
+Light and OLED Black remain as alternates. Windows high-contrast mode uses
+system colors. Theme choice
 persists in `Data/window.json` alongside window bounds and the preferred
 filename style, starts no process, downloads nothing, and never changes
 generated packages.

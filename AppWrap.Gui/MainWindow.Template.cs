@@ -74,7 +74,7 @@ public partial class MainWindow
         var folderRow = new Grid { Margin = new(0, 0, 0, 10) };
         folderRow.ColumnDefinitions.Add(new());
         folderRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var folderText = Identify(new TextBox { Text = templateFolder, ToolTip = "Type or paste the new project folder, or use Choose folder…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TemplateFolder");
+        var folderText = Identify(new TextBox { Text = templateFolder, ToolTip = "Type or paste the new project folder, or use Choose folder…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, FontFamily = MonoFont, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TemplateFolder");
         folderText.SetResourceReference(Control.ForegroundProperty, "Text");
         folderRow.Children.Add(folderText);
         WirePathCommit(folderText, text =>
@@ -90,7 +90,7 @@ public partial class MainWindow
             if (dialog.ShowDialog(this) == true) { templateFolder = dialog.FolderName; templateNote = null; templateDiagnostics = null; Render(); }
         };
         Grid.SetColumn(chooseFolder, 1); folderRow.Children.Add(chooseFolder);
-        var folderCard = new Border { Child = folderRow, CornerRadius = new(8), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 10) };
+        var folderCard = new Border { Child = folderRow, CornerRadius = new(4), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 10) };
         folderCard.SetResourceReference(Border.BackgroundProperty, "InputSurface"); folderCard.SetResourceReference(Border.BorderBrushProperty, "Border");
         panel.Children.Add(folderCard);
 
