@@ -49,7 +49,7 @@ public partial class MainWindow
         var fileRow = new Grid { Margin = new(0, 0, 0, 10) };
         fileRow.ColumnDefinitions.Add(new());
         fileRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var fileText = Identify(new TextBox { Text = auditFile, ToolTip = "Type or paste the setup file or portable zip to audit, or use Choose file…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsEnabled = !auditBusy, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "AuditSourceFile");
+        var fileText = Identify(new TextBox { Text = auditFile, ToolTip = "Type or paste the setup file or portable zip to audit, or use Choose file…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, FontFamily = MonoFont, IsEnabled = !auditBusy, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "AuditSourceFile");
         fileText.SetResourceReference(Control.ForegroundProperty, "Text");
         fileRow.Children.Add(fileText);
         WirePathCommit(fileText, text =>
@@ -66,7 +66,7 @@ public partial class MainWindow
             if (dialog.ShowDialog(this) == true) { auditFile = dialog.FileName; auditReport = null; auditNote = null; Render(); }
         };
         Grid.SetColumn(choose, 1); fileRow.Children.Add(choose);
-        var fileCard = new Border { Child = fileRow, CornerRadius = new(8), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 10) };
+        var fileCard = new Border { Child = fileRow, CornerRadius = new(4), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 10) };
         fileCard.SetResourceReference(Border.BackgroundProperty, "InputSurface"); fileCard.SetResourceReference(Border.BorderBrushProperty, "Border");
         panel.Children.Add(fileCard);
 

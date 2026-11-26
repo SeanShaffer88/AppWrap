@@ -124,13 +124,13 @@ public partial class MainWindow
         var location = new Grid(); location.ColumnDefinitions.Add(new()); location.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var value = FolderDestination ? outputFolder : SingleDestination;
         suggestedOutput = TrySuggestedDestination() ?? "";
-        var path = Identify(new TextBox { Text = value, ToolTip = "Type or paste a path, or use the button to browse", Style = null, BorderThickness = new(0), Background = Brushes.Transparent, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, FolderDestination ? "OutputFolder" : "OutputPath");
+        var path = Identify(new TextBox { Text = value, ToolTip = "Type or paste a path, or use the button to browse", Style = null, BorderThickness = new(0), Background = Brushes.Transparent, FontFamily = MonoFont, IsReadOnly = false, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, FolderDestination ? "OutputFolder" : "OutputPath");
         path.SetResourceReference(Control.ForegroundProperty, "Text"); location.Children.Add(path);
         WirePathCommit(path, CommitOutputText);
         outputLocationDisplay = path;
         var choose = Identify(new Button { Content = FolderDestination ? "Choose folder…" : "Save as…", Padding = new(12, 6, 12, 6), MinHeight = 40, FontSize = 13 }, FolderDestination ? "BrowseOutputFolder" : "BrowseOutputPath");
         choose.Click += (_, _) => BrowseOutput(); Grid.SetColumn(choose, 1); location.Children.Add(choose);
-        var locationCard = new Border { Child = location, CornerRadius = new(8), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
+        var locationCard = new Border { Child = location, CornerRadius = new(4), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
         locationCard.SetResourceReference(Border.BackgroundProperty, "InputSurface"); locationCard.SetResourceReference(Border.BorderBrushProperty, "Border"); panel.Children.Add(locationCard);
         if (IsBoth) { FilenamePreview(panel, "Installer", GeneratedName(OutputMode.Standard), OutputMode.Standard); FilenamePreview(panel, "Portable", GeneratedName(OutputMode.PortableApps), OutputMode.PortableApps); }
         else if (IsPaf) FilenamePreview(panel, "Folder", PafFolderName, OutputMode.PafPackage);

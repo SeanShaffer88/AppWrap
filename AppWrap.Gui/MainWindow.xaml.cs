@@ -17,7 +17,9 @@ public partial class MainWindow : Window
     private int step;
     private bool scanning;
     private IReadOnlyList<string> executables = [];
-    private string theme = "AppWrap";
+    private string theme = ThemeCatalog.DefaultName;
+    // FluentGruv TOKENS.md section 3: monospace for paths, logs and metrics.
+    private static readonly FontFamily MonoFont = new("Consolas, Cascadia Mono, JetBrains Mono");
     private string source = "", name = "", version = "1.0", executable = "", output = "";
     private string? icon, sidebar;
     private string? cleanupWarning;
@@ -79,15 +81,15 @@ public partial class MainWindow : Window
         if (optional && !string.IsNullOrEmpty(selected))
         {
             try { var thumbnail = new Image { Source = AppWrap.Imaging.ImageAssets.Load(selected), Width = 34, Height = 48, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Selected image preview" }; glyph.Visibility = Visibility.Collapsed; grid.Children.Add(thumbnail); }
-            catch (Exception) { Error.Text = "This picture could not be opened. Choose another image or use the default."; }
+            catch (Exception) { Error.SetResourceReference(TextBlock.ForegroundProperty, "Error"); Error.Text = "This picture could not be opened. Choose another image or use the default."; }
         }
-        var path = Identify(new TextBox { Text = editable ? selected ?? "" : string.IsNullOrEmpty(selected) ? optional ? "Use the default, or pick a picture" : step == 0 ? "Choose a folder to get started" : "Choose where to save your package" : selected, IsReadOnly = !editable, Style = null, BorderThickness = new(0), Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, ToolTip = editable ? "Type or paste a path, or use the button to browse" : selected, Padding = new(0, 8, 8, 8), Margin = new(0, 0, 12, 0) }, id);
+        var path = Identify(new TextBox { Text = editable ? selected ?? "" : string.IsNullOrEmpty(selected) ? optional ? "Use the default, or pick a picture" : step == 0 ? "Choose a folder to get started" : "Choose where to save your package" : selected, IsReadOnly = !editable, Style = null, BorderThickness = new(0), Background = Brushes.Transparent, FontFamily = MonoFont, VerticalContentAlignment = VerticalAlignment.Center, ToolTip = editable ? "Type or paste a path, or use the button to browse" : selected, Padding = new(0, 8, 8, 8), Margin = new(0, 0, 12, 0) }, id);
         if (editable && commitPath != null) WirePathCommit(path, commitPath);
         path.SetResourceReference(Control.ForegroundProperty, "Text");
         Grid.SetColumn(path, 1); grid.Children.Add(path);
         var button = Identify(new Button { Content = optional ? "Choose image…" : step == 0 ? "Choose folder…" : "Save as…", MinWidth = 138, VerticalAlignment = VerticalAlignment.Center }, "Browse" + id);
         button.Click += (_, _) => choose(); Grid.SetColumn(button, 2); grid.Children.Add(button);
-        var card = new Border { CornerRadius = new(12), Padding = new(14, 12, 12, 12), BorderThickness = new(1), Child = grid };
+        var card = new Border { CornerRadius = new(4), Padding = new(14, 12, 12, 12), BorderThickness = new(1), Child = grid };
         card.SetResourceReference(Border.BackgroundProperty, "InputSurface"); card.SetResourceReference(Border.BorderBrushProperty, "Border"); panel.Children.Add(card);
         if (optional && !string.IsNullOrEmpty(selected))
         {
@@ -118,7 +120,7 @@ public partial class MainWindow : Window
         var panel = Panel();
         if (auditPanelOpen) { RenderAuditPanel(panel); return; }
         if (testPanelOpen) { RenderTestPanel(panel); return; }
-        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap }, "FinishedOutput")); if (UsesPortable) { var testButton = Identify(new Button { Content = "Test package…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TestPackageOpen"); testButton.Click += (_, _) => OpenTestPanel(); panel.Children.Add(testButton); } var another = Identify(new Button { Content = "Package another app", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "PackageAnother"); another.Click += (_, _) => ResetWizard(); panel.Children.Add(another); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
+        if (finished) { Question.Text = IsBoth ? "Your packages are ready." : "Your package is ready."; Hint.Text = IsBoth ? "Your installer and portable package are ready to share." : IsPaf ? "You can give this folder to the official PortableApps.com Installer to build the final package." : "You can share this file with other Windows users."; panel.Children.Add(Identify(new TextBox { Text = output, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, FontFamily = MonoFont }, "FinishedOutput")); if (UsesPortable) { var testButton = Identify(new Button { Content = "Test package…", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "TestPackageOpen"); testButton.Click += (_, _) => OpenTestPanel(); panel.Children.Add(testButton); } var another = Identify(new Button { Content = "Package another app", FontSize = 13, MinHeight = 36, Padding = new(12, 6, 12, 6), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 12, 0, 0) }, "PackageAnother"); another.Click += (_, _) => ResetWizard(); panel.Children.Add(another); if (cleanupWarning != null) { Error.Text = "Your package is ready. Some temporary files could not be removed; see details."; Error.SetResourceReference(TextBlock.ForegroundProperty, "Warning"); DetailsText.Text = cleanupWarning; Details.Visibility = Visibility.Visible; } return; }
         if (busy) { Question.Text = "Wrapping your app…"; Hint.Text = "This can take a little while. Your original app stays where it is."; return; }
         if (configOpen && configWorkspace is not null) { RenderProjectConfig(panel); return; }
         if (templateOpen) { RenderTemplatePanel(panel); return; }
@@ -268,6 +270,7 @@ public partial class MainWindow : Window
 
     private void ShowError(Exception error)
     {
+        Error.SetResourceReference(TextBlock.ForegroundProperty, "Error");
         Error.Text = error is UserInputException or BuildFailureException ? error.Message : error is UnauthorizedAccessException ? "AppWrap cannot write here. Move AppWrap to a writable folder and choose a location you can save to." : "AppWrap couldn’t finish this step. Check that the folder and files are available, then try again.";
         DetailsText.Text = error is BuildFailureException failure ? failure.Details : error.ToString();
         Details.Visibility = error is UserInputException ? Visibility.Collapsed : Visibility.Visible;
@@ -277,7 +280,7 @@ public partial class MainWindow : Window
 
     private void ThemeChanged(object sender, SelectionChangedEventArgs e)
     { if (ThemePicker.SelectedItem is string selected) { theme = selected; ThemeCatalog.Apply(theme, Application.Current.Resources); } }
-    private sealed record SavedWindow(double Left, double Top, double Width, double Height, bool Maximized, string Theme = "AppWrap", PackageNamingStyle NamingStyle = PackageNamingStyle.NameVersionSetup);
+    private sealed record SavedWindow(double Left, double Top, double Width, double Height, bool Maximized, string Theme = ThemeCatalog.DefaultName, PackageNamingStyle NamingStyle = PackageNamingStyle.NameVersionSetup);
     private void RestoreWindow()
     {
         try
@@ -287,7 +290,7 @@ public partial class MainWindow : Window
             if (new FileInfo(statePath).Length > 65536) return;
             var saved = JsonSerializer.Deserialize<SavedWindow>(File.ReadAllText(statePath));
             if (saved == null) return;
-            theme = ThemeCatalog.Names.Contains(saved.Theme) ? saved.Theme : "AppWrap";
+            theme = ThemeCatalog.Names.Contains(saved.Theme) ? saved.Theme : ThemeCatalog.DefaultName;
             namingStyle = Enum.IsDefined(saved.NamingStyle) ? saved.NamingStyle : PackageNamingStyle.NameVersionSetup;
             var restored = WindowPlacement.Clamp(new Rect(saved.Left, saved.Top, saved.Width, saved.Height), MinWidth, MinHeight);
             MinWidth = Math.Min(MinWidth, restored.Width); MinHeight = Math.Min(MinHeight, restored.Height);

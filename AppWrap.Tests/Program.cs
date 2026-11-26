@@ -160,6 +160,7 @@ internal static class Program
         await TestHarnessAsyncChecks.RunAsync(evidence, Check);
         await PafPackageChecks.RunAsync(root, evidence, input, Check, Reject);
         ComplianceChecks.Run(input, Check);
+        ThemeChecks.Run(root, Check);
         await LongStageChecks.Run(root, evidence, input, Check);
         File.WriteAllText(Path.Combine(evidence, "results.json"), JsonSerializer.Serialize(new { passed = Passed.Count, checks = Passed, evidence, installersExecuted = false }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"RESULT: {Passed.Count} checks passed. Evidence: {evidence}");

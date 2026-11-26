@@ -42,7 +42,7 @@ public partial class MainWindow
         Question.Text = "How does your app handle its settings?";
         Hint.Text = "Choose “Already portable” if the app keeps everything in its own folder.\nChoose “Configure data and cleanup” to teach the launcher where the app stores files and settings, so they travel with the package.";
         profileState.WizardAppId = ProfileAppId();
-        var modes = new Border { CornerRadius = new(12), Padding = new(4), BorderThickness = new(1), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 0, 0, 12) };
+        var modes = new Border { CornerRadius = new(4), Padding = new(4), BorderThickness = new(1), HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 0, 0, 12) };
         modes.SetResourceReference(Border.BackgroundProperty, "InputSurface"); modes.SetResourceReference(Border.BorderBrushProperty, "Border");
         var choices = new StackPanel { Orientation = Orientation.Horizontal };
         var already = Identify(new RadioButton { Content = "Already portable — package as supplied", IsChecked = !configurePortable, GroupName = "PortableBehavior" }, "PortableAlready");
@@ -183,8 +183,8 @@ public partial class MainWindow
         foreach (var row in page.Rows)
         {
             if (row.Id == profileSelectedRowId) selected = row;
-            var card = new Border { CornerRadius = new(6), Padding = new(8, 5, 8, 5), BorderThickness = new(1), Margin = new(0, 0, 0, 4), Focusable = true, Cursor = Cursors.Hand };
-            card.SetResourceReference(Border.BackgroundProperty, "InputSurface");
+            var card = new Border { CornerRadius = new(4), Padding = new(8, 5, 8, 5), BorderThickness = new(1), Margin = new(0, 0, 0, 4), Focusable = true, Cursor = Cursors.Hand };
+            card.SetResourceReference(Border.BackgroundProperty, row.Id == profileSelectedRowId ? "AccentSubtle" : "InputSurface");
             card.SetResourceReference(Border.BorderBrushProperty, row.Id == profileSelectedRowId ? "StepAccent" : "Border");
             AutomationProperties.SetAutomationId(card, "ProfileRow");
             AutomationProperties.SetName(card, row.Display);
@@ -294,7 +294,7 @@ public partial class MainWindow
 
     private void RenderProfileRowEditor(StackPanel right, ProfileRuleRow? selected)
     {
-        var card = new Border { CornerRadius = new(8), Padding = new(10, 8, 10, 8), BorderThickness = new(1), Margin = new(0, 0, 0, 6) };
+        var card = new Border { CornerRadius = new(4), Padding = new(10, 8, 10, 8), BorderThickness = new(1), Margin = new(0, 0, 0, 6) };
         card.SetResourceReference(Border.BackgroundProperty, "InputSurface");
         card.SetResourceReference(Border.BorderBrushProperty, "Border");
         right.Children.Add(card);
@@ -358,7 +358,7 @@ public partial class MainWindow
 
     private void RenderExtensionEditor(StackPanel right, ProfileRuleRow? selected)
     {
-        var card = new Border { CornerRadius = new(8), Padding = new(10, 8, 10, 8), BorderThickness = new(1), Margin = new(0, 0, 0, 6) };
+        var card = new Border { CornerRadius = new(4), Padding = new(10, 8, 10, 8), BorderThickness = new(1), Margin = new(0, 0, 0, 6) };
         card.SetResourceReference(Border.BackgroundProperty, "InputSurface");
         card.SetResourceReference(Border.BorderBrushProperty, "Border");
         right.Children.Add(card);

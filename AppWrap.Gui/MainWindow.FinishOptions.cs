@@ -27,7 +27,7 @@ public partial class MainWindow
         url.TextChanged += (_, _) => { developerWebsite = url.Text; Error.Text = ""; };
         website.Checked += (_, _) => url.IsEnabled = true; website.Unchecked += (_, _) => { url.IsEnabled = false; Error.Text = ""; };
         choices.Children.Add(url);
-        var card = new Border { Child = choices, Padding = new(12, 4, 12, 4), CornerRadius = new(8), BorderThickness = new(1) };
+        var card = new Border { Child = choices, Padding = new(12, 4, 12, 4), CornerRadius = new(4), BorderThickness = new(1) };
         card.SetResourceReference(Border.BackgroundProperty, "InputSurface"); card.SetResourceReference(Border.BorderBrushProperty, "Border"); panel.Children.Add(card);
     }
 }

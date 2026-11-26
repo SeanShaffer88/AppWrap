@@ -57,7 +57,7 @@ public partial class MainWindow
         var folderRow = new Grid { Margin = new(0, 0, 0, 10) };
         folderRow.ColumnDefinitions.Add(new());
         folderRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var folderText = Identify(new TextBox { Text = testFolder, ToolTip = "Type or paste a built PAF Package folder, or a portable app folder extracted from a package — or use Choose folder…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, IsReadOnly = false, IsEnabled = !testBusy, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TestPackageFolder");
+        var folderText = Identify(new TextBox { Text = testFolder, ToolTip = "Type or paste a built PAF Package folder, or a portable app folder extracted from a package — or use Choose folder…", Style = null, BorderThickness = new(0), Background = System.Windows.Media.Brushes.Transparent, FontFamily = MonoFont, IsReadOnly = false, IsEnabled = !testBusy, Padding = new(0, 6, 8, 6), FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center }, "TestPackageFolder");
         folderText.SetResourceReference(Control.ForegroundProperty, "Text");
         folderRow.Children.Add(folderText);
         WirePathCommit(folderText, text =>
@@ -74,7 +74,7 @@ public partial class MainWindow
             if (dialog.ShowDialog(this) == true) { testFolder = dialog.FolderName; testReport = null; Render(); }
         };
         Grid.SetColumn(choose, 1); folderRow.Children.Add(choose);
-        var folderCard = new Border { Child = folderRow, CornerRadius = new(8), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 10) };
+        var folderCard = new Border { Child = folderRow, CornerRadius = new(4), Padding = new(10, 4, 4, 4), BorderThickness = new(1), Margin = new(0, 0, 0, 10) };
         folderCard.SetResourceReference(Border.BackgroundProperty, "InputSurface"); folderCard.SetResourceReference(Border.BorderBrushProperty, "Border");
         panel.Children.Add(folderCard);
 
@@ -118,7 +118,7 @@ public partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new(0, 4, 0, 4),
             };
-            verdict.SetResourceReference(TextBlock.ForegroundProperty, report.Verdict == TestVerdict.Pass ? "Text" : "Error");
+            verdict.SetResourceReference(TextBlock.ForegroundProperty, report.Verdict == TestVerdict.Pass ? "Success" : "Error");
             panel.Children.Add(verdict);
             var summary = new TextBlock
             {
