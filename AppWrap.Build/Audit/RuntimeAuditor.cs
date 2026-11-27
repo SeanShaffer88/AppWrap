@@ -12,7 +12,8 @@ public sealed record RuntimeAuditRequest(
     IReadOnlyList<string>? SilentArguments = null,
     IReadOnlyList<string>? RegistryRoots = null,
     TimeSpan? InstallerTimeout = null,
-    TimeSpan? AppTimeout = null);
+    TimeSpan? AppTimeout = null,
+    string? PayloadOutputDirectory = null);
 
 public sealed record RuntimeAuditResult(
     AuditReport Report,
@@ -124,18 +125,13 @@ public static class RuntimeAuditor
     }
 
     /// <summary>
-    /// The sandboxed route (pipeline stage 2): the same install + launch
-    /// observation, but the vendor installer and the installed app run
-    /// inside a dedicated Sandboxie box whose file root is a scratch
-    /// folder, so nothing they write touches the real host filesystem or
-    /// registry. The harvest — box files mapped back to host/PAL paths,
-    /// and the box's own registry hive — becomes the findings, through
-    /// the same classification as the host route. Falls back to nothing:
-    /// when the provider is unavailable the caller runs the host route
-    /// and the report says which backend observed (see the CLI). The
-    /// install target inside the box is still a scratch path, so the
-    /// installer's own silent switches behave exactly as on the host
-    /// route. Windows-only at runtime; Unverified.
+    /// The sandboxed route (pipeline stage 2): setup installers and their
+    /// installed apps, or a selected executable from a portable zip, run
+    /// inside a dedicated Sandboxie box. Files and the box registry hive
+    /// become findings through the same classification as the host route.
+    /// A missing provider or failed hive capture is an error, never a host
+    /// fallback. Zip payloads are retained at the requested output folder.
+    /// Windows-only at runtime; Unverified.
     /// </summary>
     public static async Task<RuntimeAuditResult> RunSandboxedAsync(RuntimeAuditRequest request,
         ISandboxProvider sandbox, IMsiReader msiReader, CancellationToken token)
@@ -143,54 +139,96 @@ public static class RuntimeAuditor
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(sandbox);
         if (!sandbox.IsAvailable)
-            throw new BuildFailureException("Sandboxie-Plus is not installed, so the sandboxed profiling route cannot run. The host runtime audit remains available.", "Sandboxed runtime audit requested without Sandboxie.");
+            throw new BuildFailureException("Sandboxie-Plus is not installed; the sandboxed audit was not run. AppWrap will not fall back to running the source on the host.", "Sandboxed runtime audit requested without Sandboxie.");
         InputRules.SafePath(request.SourcePath);
-        if (!File.Exists(request.SourcePath)) throw new UserInputException("Choose an installer file that still exists.");
+        if (!File.Exists(request.SourcePath)) throw new UserInputException("Choose an installer file or portable zip that still exists.");
         var extension = Path.GetExtension(request.SourcePath).ToLowerInvariant();
-        if (extension is not (".exe" or ".msi")) throw new UserInputException("The runtime audit takes a setup .exe or .msi file.");
+        var isZip = extension == ".zip";
+        if (extension is not (".exe" or ".msi" or ".zip"))
+            throw new UserInputException("The sandboxed runtime audit takes a setup .exe/.msi or a portable .zip file.");
+        var payloadOutputDirectory = isZip
+            ? Path.GetFullPath(request.PayloadOutputDirectory ?? throw new UserInputException("Choose a folder where AppWrap can keep the extracted zip payload."))
+            : null;
+        if (payloadOutputDirectory is not null)
+        {
+            InputRules.SafePath(payloadOutputDirectory);
+            if (Directory.Exists(payloadOutputDirectory) || File.Exists(payloadOutputDirectory))
+                throw new UserInputException("Choose a new, empty location for the extracted zip payload.");
+        }
 
-        var staticReport = extension == ".msi"
-            ? StaticAuditor.AuditMsi(request.SourcePath, msiReader)
-            : StaticAuditor.AuditExe(request.SourcePath);
         var workRoot = Path.Combine(Path.GetTempPath(), "appwrap-audit-box-" + Guid.NewGuid().ToString("N"));
         var installDir = Path.Combine(workRoot, "install");
         Directory.CreateDirectory(installDir);
         var spec = SandboxieBoxSpec.Profiling(Path.Combine(workRoot, "box"));
         Directory.CreateDirectory(spec.FileRootPath);
+        var extractedPayload = payloadOutputDirectory;
+        var preservePayload = false;
         RuntimeAuditResult? result = null;
         try
         {
-            var (executable, arguments) = InstallCommand(request, installDir);
-            var installer = await sandbox.RunAsync(spec, executable, arguments, request.InstallerTimeout ?? DefaultInstallerTimeout, token).ConfigureAwait(false);
-            token.ThrowIfCancellationRequested();
+            AuditReport staticReport;
+            SandboxRunOutcome? installer = null;
+            if (isZip)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(extractedPayload!)!);
+                staticReport = StaticAuditor.AuditZip(request.SourcePath, extractedPayload!, token);
+            }
+            else
+            {
+                staticReport = extension == ".msi"
+                    ? StaticAuditor.AuditMsi(request.SourcePath, msiReader)
+                    : StaticAuditor.AuditExe(request.SourcePath);
+                var (executable, arguments) = InstallCommand(request, installDir);
+                installer = await sandbox.RunAsync(spec, executable, arguments, request.InstallerTimeout ?? DefaultInstallerTimeout, token).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                if (installer.TimedOut)
+                    throw new BuildFailureException("The installer timed out inside Sandboxie; AppWrap stopped the audit instead of reporting partial results.", "Sandboxed installer exceeded its timeout.");
+                if (installer.ExitCode is not (0 or 3010))
+                    throw new BuildFailureException("The installer did not finish successfully inside Sandboxie; AppWrap stopped the audit.", $"Sandboxed installer exit code: {installer.ExitCode?.ToString() ?? "unknown"}.");
+            }
 
-            var context = HostContext();
+            var context = HostContext() with { AppDirectory = isZip ? extractedPayload : installDir };
             var boxFiles = sandbox.HarvestFiles(spec);
             var findings = new List<AuditFinding>(staticReport.Findings);
             findings.AddRange(SandboxieHarvest.FromBoxFiles(boxFiles, spec, context));
 
             int? appExitCode = null;
             var appTimedOut = false;
-            var launch = request.LaunchExecutable;
-            if (launch is null)
+            string? launch;
+            string? executablePath;
+            string? workingDirectory = null;
+            if (isZip)
             {
-                // The installed app's host path, mirrored back from the box:
-                // the executable the harvest saw under the install folder.
-                var installPrefix = installDir.Replace('/', '\\').TrimEnd('\\') + "\\";
-                launch = boxFiles
-                    .Select(f => PalPathMapper.BoxPathToHostPath(f, context))
-                    .Where(p => p is not null && p.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase)
-                        && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(p => p!.Length)
-                    .FirstOrDefault();
+                launch = request.LaunchExecutable ?? staticReport.MainExecutable;
+                if (string.IsNullOrWhiteSpace(launch))
+                    throw new UserInputException("AppWrap could not choose one main executable in this zip. Select an executable with --launch and run the sandboxed audit again.");
+                executablePath = ResolveZipExecutable(extractedPayload!, launch);
+                workingDirectory = extractedPayload;
             }
             else
             {
-                launch = Path.Combine(installDir, launch.Replace('/', Path.DirectorySeparatorChar));
+                launch = request.LaunchExecutable;
+                if (launch is null)
+                {
+                    // The installed app's host path, mirrored back from the box:
+                    // the executable the harvest saw under the install folder.
+                    var installPrefix = installDir.Replace('/', '\\').TrimEnd('\\') + "\\";
+                    executablePath = boxFiles
+                        .Select(f => PalPathMapper.BoxPathToHostPath(f, context))
+                        .Where(p => p is not null && p.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase)
+                            && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(p => p!.Length)
+                        .FirstOrDefault();
+                    launch = executablePath is null ? null : Path.GetFileName(executablePath);
+                }
+                else
+                {
+                    executablePath = Path.Combine(installDir, launch.Replace('/', Path.DirectorySeparatorChar));
+                }
             }
-            if (launch is not null)
+            if (executablePath is not null)
             {
-                var app = await sandbox.RunAsync(spec, launch, [], request.AppTimeout ?? DefaultAppTimeout, token).ConfigureAwait(false);
+                var app = await sandbox.RunAsync(spec, executablePath, [], request.AppTimeout ?? DefaultAppTimeout, token, workingDirectory).ConfigureAwait(false);
                 appExitCode = app.ExitCode;
                 appTimedOut = app.TimedOut;
                 // Re-harvest: the app's own writes join the findings too.
@@ -198,20 +236,34 @@ public static class RuntimeAuditor
             }
             var registryChanges = SandboxieHarvest.FromLoadedHive(sandbox.CaptureBoxRegistry(spec, token), SandboxieHarvest.LoadRootFor(spec));
             findings.AddRange(RuntimeFindings.FromRegistryChanges(registryChanges));
+
             var merged = staticReport with
             {
                 Findings = findings.GroupBy(f => (f.Kind, f.Subject)).Select(g => g.First()).ToList(),
-                PayloadFolder = spec.FileRootPath,
-                MainExecutable = launch is not null ? Path.GetFileName(launch) : staticReport.MainExecutable,
+                PayloadFolder = isZip ? payloadOutputDirectory : spec.FileRootPath,
+                MainExecutable = launch ?? staticReport.MainExecutable,
             };
-            result = new RuntimeAuditResult(merged, registryChanges, installDir, installer.ExitCode, appExitCode, appTimedOut, null);
+            result = new RuntimeAuditResult(merged, registryChanges, isZip ? payloadOutputDirectory! : installDir,
+                installer?.ExitCode, appExitCode, appTimedOut, null);
+            preservePayload = isZip;
         }
         finally
         {
+            if (isZip && !preservePayload && extractedPayload is not null)
+                TryDeleteTree(extractedPayload);
             var warning = TryDeleteTree(workRoot);
             if (result is not null && warning is not null) result = result with { CleanupWarning = warning };
         }
         return result!;
+    }
+
+    private static string ResolveZipExecutable(string payloadDirectory, string relativePath)
+    {
+        var fullRoot = Path.GetFullPath(payloadDirectory);
+        var fullPath = Path.GetFullPath(Path.Combine(fullRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!InputRules.IsWithin(fullPath, fullRoot) || !File.Exists(fullPath))
+            throw new UserInputException("Choose an executable inside the extracted zip payload.");
+        return fullPath;
     }
 
     private static PalPathContext HostContext() => new(

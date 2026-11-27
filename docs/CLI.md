@@ -256,12 +256,12 @@ identified by family with its payload stated as an audit limit.
 
 | Option | Meaning |
 | --- | --- |
-| `--runtime` | The explicit second pass (Windows only, `.exe`/`.msi` only): silently install into a scratch folder, launch the installed app once, and merge the observed registry writes into the findings. Never part of a build. |
+| `--runtime` | Explicit second pass (Windows only): silently install a setup into scratch and launch its app, or profile a zip only with `--sandboxie`. Setup runtime without `--sandboxie` uses the host and can change its registry. Never part of a build. |
 | `--engines` | Use the pipeline's prepared extraction engines for the static pass (7-Zip / innoextract / lessMSI under `third_party/engines` beside the CLI; `docs/PIPELINE.md` stage 1): installer payloads are unpacked and inventoried instead of stopping at family identification. Without prepared engines the lines say so and the pass degrades to family identification + the explicit audit limit. |
-| `--sandboxie` | With `--runtime`: profile inside a dedicated Sandboxie box (pipeline stage 2) — the install and launch happen in the box and the box's files + registry hive are harvested, so the host is untouched. Without Sandboxie-Plus the runtime pass falls back to the host route and the result says so. The JSON result gains `runtimeBackend` (`sandboxie` / `host`). |
+| `--sandboxie` | With `--runtime`: require Sandboxie and profile inside a dedicated box (pipeline stage 2). Installer or selected zip app runs in the box; files and registry hive are harvested. Missing Sandboxie or a failed hive load stops the audit; no host fallback. |
 | `--draft <profile.json>` | Synthesize a DRAFT portable profile from the findings and save it in the wizard's profile `.json` shape. The draft is untrusted until reviewed and saved in the profile workspace; if the draft itself has validation errors the command exits 3 (the file is still written). |
 | `--report <path>` | Write the full audit report JSON (`audit-report` shape: source, kind, payload folder, main executable, typed findings with evidence and confidence). |
-| `--launch <file>` | For `--runtime`: the installed app's launch file relative to the install folder. Default: the inventoried main `.exe`. |
+| `--launch <file>` | For `--runtime`: installed app's launch file relative to its install folder, or a zip executable relative to the extracted payload. Default: the inventoried main `.exe`. |
 | `--silent-args <args>` | For `--runtime` with an `.exe`: the installer's silent arguments as one string, for families AppWrap does not know. An unknown family without this is refused, never run interactively. |
 | `--msi-fixture <file>` | Read MSI tables from a recorded fixture JSON instead of `msi.dll` (non-Windows hosts and checks). |
 

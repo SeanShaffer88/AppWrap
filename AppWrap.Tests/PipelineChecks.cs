@@ -1,5 +1,7 @@
 using System.IO;
+using System.IO.Compression;
 using AppWrap.Build;
+using AppWrap.Build.Audit;
 using AppWrap.Build.Pipeline;
 using AppWrap.Cli;
 using AppWrap.Core;
@@ -31,10 +33,11 @@ public static class PipelineChecks
             && sbie.ReleasePageUrl == "https://github.com/sandboxie-plus/Sandboxie/releases/tag/v1.18.8"
             && sbie.SilentArguments.Contains("/VERYSILENT"));
         var x64 = sbie.AssetFor("x64")!;
-        check("sandboxie x64 asset is pinned with an honestly-unverified hash", x64.FileName == "Sandboxie-Plus-x64-v1.18.8.exe"
+        check("sandboxie x64 asset is pinned to the official release checksum", x64.FileName == "Sandboxie-Plus-x64-v1.18.8.exe"
             && x64.DownloadUrl.EndsWith("/v1.18.8/Sandboxie-Plus-x64-v1.18.8.exe", StringComparison.Ordinal)
-            && x64.Sha256 is { Length: 64 } && !x64.Sha256Verified);
-        check("sandboxie arm64 asset has no pinned hash yet", sbie.AssetFor("ARM64") is { Sha256: null });
+            && x64.Sha256 == "f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76"
+            && x64.Sha256Verified);
+        check("sandboxie lock supports x64 only", sbie.Assets.Count == 1 && sbie.AssetFor("ARM64") is null);
         check("sandboxie detection facts match the official installer", sbie.UninstallKeyPath.EndsWith(@"Uninstall\Sandboxie-Plus_is1", StringComparison.Ordinal)
             && sbie.ServiceKeyPath.EndsWith(@"Services\SbieSvc", StringComparison.Ordinal));
         check("engine lock pins all three engines", ExtractionEngineLock.Pinned.Count == 3
@@ -126,6 +129,11 @@ public static class PipelineChecks
             && config.Contains(@"FileRootPath=C:\Scratch\box", StringComparison.Ordinal)
             && config.Contains("BlockNetworkFiles=y", StringComparison.Ordinal)
             && config.Contains("AutoRecover=n", StringComparison.Ordinal));
+        var refreshed = SandboxieBoxConfig.UpsertSection("[Other]\r\nEnabled=y\r\n\r\n[AppWrapProfile]\r\nFileRootPath=C:\\Old\\box\r\n",
+            SandboxieBoxSpec.Profiling(@"C:\New\box"));
+        check("fallback box config replaces the old root and keeps other boxes", refreshed.Contains("[Other]", StringComparison.Ordinal)
+            && refreshed.Contains(@"FileRootPath=C:\New\box", StringComparison.Ordinal)
+            && !refreshed.Contains(@"FileRootPath=C:\Old\box", StringComparison.Ordinal));
         reject("box config rejects unsafe box names", () => SandboxieBoxConfig.Generate(new SandboxieBoxSpec("bad]name", @"C:\Scratch\box")));
         var harvest = SandboxieHarvest.FromBoxFiles(
             [@"user\Test\AppData\Roaming\VendorX\settings.ini", @"user\Test\AppData\Local\VendorY\cache.db",
@@ -153,6 +161,14 @@ public static class PipelineChecks
         var hiveFindings = RuntimeFindings.FromRegistryChanges(hiveChanges);
         check("box hive changes become registry findings", hiveFindings.Count == 2
             && hiveFindings.Any(f => f.RegistryKeyPath == @"HKCU\Software\Vendor" && f.RegistryValueData == "dark"));
+        var failedRegistryLoad = false;
+        try { SandboxieProvider.EnsureSuccessfulExit("load the Sandboxie registry hive", 1, timedOut: false); }
+        catch (BuildFailureException error) { failedRegistryLoad = error.Message.Contains("stopped instead of claiming a clean result", StringComparison.Ordinal); }
+        check("failed registry-hive loads stop the audit", failedRegistryLoad);
+        var timedOutRegistryLoad = false;
+        try { SandboxieProvider.EnsureSuccessfulExit("load the Sandboxie registry hive", null, timedOut: true); }
+        catch (BuildFailureException) { timedOutRegistryLoad = true; }
+        check("timed-out registry-hive loads stop the audit", timedOutRegistryLoad);
 
         // --- synthesis extensions ------------------------------------------------------------
         var hostReport = new AuditReport(AuditReport.CurrentSchemaVersion, msiPath, AuditSourceKind.MsiPackage, null, "SampleApp.exe",
@@ -212,6 +228,40 @@ public static class PipelineChecks
         check("sandboxie leak test fails on an escaped write", leakyRun.Report.Verdict == TestVerdict.Fail
             && leakyRun.Report.Violations.Any(w => w.Category == WriteCategory.ProfileLeakage));
 
+        // --- sandboxed portable-zip runtime audit ---------------------------------------------
+        var zipPath = Path.Combine(root, "sample.zip");
+        using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            var entry = archive.CreateEntry("DemoApp.exe");
+            using var stream = entry.Open();
+            stream.WriteByte(0x4D);
+            stream.WriteByte(0x5A);
+        }
+        var payloadOutput = Path.Combine(root, "zip-payload-output");
+        var zipSandbox = new FakeSandbox(leak: false);
+        var zipRuntime = await RuntimeAuditor.RunSandboxedAsync(
+            new RuntimeAuditRequest(zipPath, PayloadOutputDirectory: payloadOutput),
+            zipSandbox, new WindowsMsiReader(), CancellationToken.None);
+        check("zip runtime audit launches its main executable in the sandbox and keeps payload",
+            zipRuntime.Report.MainExecutable == "DemoApp.exe"
+            && zipRuntime.Report.PayloadFolder == payloadOutput
+            && File.Exists(Path.Combine(payloadOutput, "DemoApp.exe"))
+            && zipSandbox.Runs.Any(run => Path.GetFileName(run.Executable) == "DemoApp.exe"
+                && run.WorkingDirectory is not null));
+        var unavailableSandbox = new FakeSandbox(leak: false, available: false);
+        var sandboxMissingFailsClosed = false;
+        try
+        {
+            await RuntimeAuditor.RunSandboxedAsync(
+                new RuntimeAuditRequest(zipPath, PayloadOutputDirectory: Path.Combine(root, "not-created")),
+                unavailableSandbox, new WindowsMsiReader(), CancellationToken.None);
+        }
+        catch (BuildFailureException error)
+        {
+            sandboxMissingFailsClosed = error.Message.Contains("will not fall back", StringComparison.OrdinalIgnoreCase);
+        }
+        check("missing Sandboxie never runs zip app on host", sandboxMissingFailsClosed && unavailableSandbox.Runs.Count == 0);
+
         // --- cli flags ----------------------------------------------------------------------------
         check("cli parses the new audit flags", CliArguments.Parse(["audit", "setup.exe", "--runtime", "--sandboxie"]).Has("sandboxie")
             && CliArguments.Parse(["audit", "setup.exe", "--engines"]).Has("engines")
@@ -236,12 +286,14 @@ public static class PipelineChecks
     /// harness's redirected profile (the sibling of the package copy),
     /// simulating an escape the verdict must catch.
     /// </summary>
-    private sealed class FakeSandbox(bool leak) : ISandboxProvider
+    private sealed class FakeSandbox(bool leak, bool available = true) : ISandboxProvider
     {
-        public bool IsAvailable => true;
+        public List<(string Executable, string? WorkingDirectory)> Runs { get; } = [];
+        public bool IsAvailable => available;
 
-        public Task<SandboxRunOutcome> RunAsync(SandboxieBoxSpec spec, string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token)
+        public Task<SandboxRunOutcome> RunAsync(SandboxieBoxSpec spec, string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token, string? workingDirectory = null)
         {
+            Runs.Add((executable, workingDirectory));
             if (leak)
             {
                 var profile = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(executable)!, "..", "profile", "AppData", "Roaming", "Escaped"));

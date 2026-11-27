@@ -11,19 +11,14 @@ public enum ExtractionEngineKind { SevenZip, InnoExtract, LessMsi }
 ///
 /// Pinned release: Sandboxie-Plus 1.18.8 (Classic core 5.73.8), released
 /// 2026-10-17, from the official sandboxie-plus/Sandboxie GitHub releases
-/// (tag v1.18.8). Asset names follow the official installer script's own
-/// OutputBaseFilename pattern ("Sandboxie-Plus-{arch}-v{version}.exe",
-/// arch tokens x64 / ARM64). The installer is Inno Setup; its silent form
-/// is the standard Inno one below.
+/// (tag v1.18.8). AppWrap supports Windows x64 only and pins the x64 asset.
+/// The installer is Inno Setup; its silent form is the standard Inno one
+/// below.
 ///
-/// Hash status: the x64 SHA-256 recorded here is the value multiple
-/// independent mirrors compute for the file served from the official
-/// release, but the Sandboxie project does not publish hashes on a source
-/// this lock could cite, so <see cref="SandboxieAsset.Sha256Verified"/>
-/// is false and the value is Unverified (see docs/PIPELINE.md). The
-/// bootstrap still compares the download against the pinned value and
-/// refuses a mismatch; the ARM64 hash is not recorded at all, so the
-/// bootstrap refuses to install on ARM64 until a hash is pinned.
+/// Hash status: the x64 SHA-256 matches the official release's
+/// sha256-checksums.txt; the checksum file itself is pinned to the digest
+/// published in GitHub's release-asset metadata. The installer embeds this
+/// exact asset and verifies it before launch.
 /// </summary>
 public sealed record SandboxieAsset(string Architecture, string FileName, string DownloadUrl, string? Sha256, bool Sha256Verified);
 
@@ -46,10 +41,7 @@ public sealed record SandboxieLock(
         [
             new SandboxieAsset("x64", "Sandboxie-Plus-x64-v1.18.8.exe",
                 "https://github.com/sandboxie-plus/Sandboxie/releases/download/v1.18.8/Sandboxie-Plus-x64-v1.18.8.exe",
-                "f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76", Sha256Verified: false),
-            new SandboxieAsset("ARM64", "Sandboxie-Plus-ARM64-v1.18.8.exe",
-                "https://github.com/sandboxie-plus/Sandboxie/releases/download/v1.18.8/Sandboxie-Plus-ARM64-v1.18.8.exe",
-                null, Sha256Verified: false),
+                "f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76", Sha256Verified: true),
         ],
         "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-",
         @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Sandboxie-Plus_is1",
