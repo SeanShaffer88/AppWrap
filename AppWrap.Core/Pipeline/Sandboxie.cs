@@ -44,6 +44,39 @@ public static class SandboxieBoxConfig
         if (spec.BlockNetworkFiles) builder.AppendLine("BlockNetworkFiles=y");
         return builder.ToString();
     }
+
+    /// <summary>
+    /// Replaces this AppWrap box's existing section, or appends it when
+    /// absent. The fallback writer uses this to refresh the per-run file
+    /// root without leaving duplicate or stale box configuration behind.
+    /// </summary>
+    public static string UpsertSection(string existing, SandboxieBoxSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(existing);
+        var section = Generate(spec).TrimEnd('\r', '\n');
+        var lines = existing.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n')
+            .ToList();
+        var header = "[" + spec.BoxName + "]";
+        var start = lines.FindIndex(line => string.Equals(line.Trim(), header, StringComparison.OrdinalIgnoreCase));
+        var sectionLines = section.Split('\n');
+        if (start < 0)
+        {
+            while (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+            if (lines.Count > 0) lines.Add("");
+            lines.AddRange(sectionLines);
+        }
+        else
+        {
+            var end = start + 1;
+            while (end < lines.Count && !(lines[end].TrimStart().StartsWith('[') && lines[end].TrimEnd().EndsWith(']')))
+                end++;
+            lines.RemoveRange(start, end - start);
+            lines.InsertRange(start, sectionLines);
+        }
+        return string.Join("\r\n", lines);
+    }
 }
 
 /// <summary>How a sandboxed run ended (the Sandboxie Start.exe launcher reports the boxed program's exit code).</summary>
@@ -52,15 +85,15 @@ public sealed record SandboxRunOutcome(int? ExitCode, bool TimedOut, TimeSpan Du
 /// <summary>
 /// The Sandboxie execution seam. The production implementation
 /// (AppWrap.Build) drives the installed Sandboxie-Plus Start.exe;
-/// checks substitute a fake. When no implementation reports itself
-/// available, callers fall back to the host observation route and say so.
+/// checks substitute a fake. A caller that requires sandboxing must fail
+/// closed when no provider is available; a host route is a separate choice.
 /// </summary>
 public interface ISandboxProvider
 {
     bool IsAvailable { get; }
 
     /// <summary>Runs one executable inside the box described by <paramref name="spec"/> and waits for it.</summary>
-    Task<SandboxRunOutcome> RunAsync(SandboxieBoxSpec spec, string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token);
+    Task<SandboxRunOutcome> RunAsync(SandboxieBoxSpec spec, string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token, string? workingDirectory = null);
 
     /// <summary>Box-root-relative paths of every file the box currently holds (the harvest source).</summary>
     IReadOnlyList<string> HarvestFiles(SandboxieBoxSpec spec);
@@ -68,8 +101,9 @@ public interface ISandboxProvider
     /// <summary>
     /// A snapshot of the box's own registry hive (loaded under
     /// <see cref="SandboxieHarvest.LoadRootFor"/>), or an empty snapshot
-    /// when the box wrote no registry state. Convert it with
-    /// SandboxieHarvest.FromLoadedHive.
+    /// when the box wrote no registry state. A present hive that cannot be
+    /// loaded must fail the audit rather than appear to contain no changes.
+    /// Convert the snapshot with SandboxieHarvest.FromLoadedHive.
     /// </summary>
     RegistrySnapshot CaptureBoxRegistry(SandboxieBoxSpec spec, CancellationToken token);
 }

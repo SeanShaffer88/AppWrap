@@ -57,11 +57,9 @@ VIAddVersionKey "LegalCopyright" "Copyright (c) Sean Shaffer. MIT License."
 ; compute for the file served from the official release; the Sandboxie
 ; project publishes no hash AppWrap can cite, so the lock marks it
 ; Unverified — the bootstrap still refuses a download that does not match
-; it. No ARM64 hash is pinned, so on ARM64 hosts the bootstrap does NOT
-; install automatically (it says so in the log and on the final page).
+; it. AppWrap supports Windows x64 only.
 !define SBIE_VERSION "1.18.8"
 !define SBIE_URL_X64 "https://github.com/sandboxie-plus/Sandboxie/releases/download/v1.18.8/Sandboxie-Plus-x64-v1.18.8.exe"
-!define SBIE_URL_ARM64 "https://github.com/sandboxie-plus/Sandboxie/releases/download/v1.18.8/Sandboxie-Plus-ARM64-v1.18.8.exe"
 !define SBIE_SHA256_X64 "f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76"
 !define SBIE_SILENT_ARGS "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
 
@@ -86,6 +84,14 @@ Var SandboxieNote
 Function AppWrapFinishShow
   ${If} $SandboxieNote != ""
     SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:$SandboxieNote"
+  ${EndIf}
+FunctionEnd
+
+Function .onInit
+  ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PROCESSOR_ARCHITECTURE"
+  ${If} $0 != "AMD64"
+    MessageBox MB_ICONSTOP "AppWrap supports Windows 11 x64 only. This installer requires x64 Windows."
+    Abort
   ${EndIf}
 FunctionEnd
 
@@ -138,10 +144,10 @@ Function BootstrapSandboxie
     Call SbieLog
   ${EndIf}
 
-  ; Architecture: Sandboxie must match the host, not this installer.
+  ; Only Windows x64 is supported.
   ReadRegStr $3 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PROCESSOR_ARCHITECTURE"
-  ${If} $3 == "ARM64"
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed automatically: no ARM64 installer hash is pinned yet. AppWrap works without it; install Sandboxie-Plus ${SBIE_VERSION} (ARM64) manually to enable sandboxed profiling."
+  ${If} $3 != "AMD64"
+    StrCpy $SandboxieNote "Sandboxie-Plus was not installed: AppWrap supports Windows x64 only. The x64 Sandboxie installer was not run on this system."
     StrCpy $0 "$SandboxieNote"
     Call SbieLog
     Return
@@ -164,13 +170,13 @@ Function BootstrapSandboxie
   ${If} $R1 == 0
     StrCpy $SandboxieNote "Sandboxie-Plus ${SBIE_VERSION} was installed for sandboxed profiling (download verified against its pinned SHA-256)."
   ${ElseIf} $R1 == 10
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the download from the official release failed. AppWrap works without it; sandboxed profiling will use the host fallback until Sandboxie-Plus is installed."
+    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the download from the official release failed. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${ElseIf} $R1 == 11
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the downloaded installer's SHA-256 did not match the pinned value, so it was refused. AppWrap works without it; sandboxed profiling will use the host fallback."
+    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the downloaded installer's SHA-256 did not match the pinned value, so it was refused. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${ElseIf} $R1 == 12
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: its installer reported a failure. AppWrap works without it; sandboxed profiling will use the host fallback until Sandboxie-Plus is installed."
+    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: its installer reported a failure. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${Else}
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the bootstrap step failed (exit $R1). AppWrap works without it; sandboxed profiling will use the host fallback until Sandboxie-Plus is installed."
+    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the bootstrap step failed (exit $R1). AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${EndIf}
   StrCpy $0 "$SandboxieNote"
   Call SbieLog
@@ -211,8 +217,8 @@ Section "Sandboxie-Plus profiling runtime" SecSandboxie
   ; against the pinned SHA-256, and installed silently (its Inno Setup
   ; silent form; Windows still shows its own UAC prompt for the kernel
   ; driver — that prompt is the operating system's, not AppWrap's).
-  ; Any failure leaves AppWrap fully installed and working with the host
-  ; fallback, and says so plainly here, in the log file, and on the
+  ; Any failure leaves AppWrap fully installed and working; sandboxed
+  ; audits stop until Sandboxie is available. Say so plainly here, in the log, and on the
   ; final page. The decision logic mirrors SandboxieBootstrapPlanner.
   Call BootstrapSandboxie
 SectionEnd

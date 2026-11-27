@@ -43,7 +43,7 @@ agree, and it is check-covered:
 - **Ready**: service + Start.exe present and the version is at or above
   the pinned floor (or unreadable — an install AppWrap cannot prove is
   old is left alone). Nothing is downloaded.
-- **Install / upgrade**: the pinned installer for the host architecture
+- **Install / upgrade**: the pinned Windows x64 installer
   is downloaded from the official sandboxie-plus/Sandboxie GitHub
   release, its SHA-256 is compared against the pinned value, and it is
   run with the Inno Setup silent form
@@ -55,12 +55,9 @@ agree, and it is check-covered:
   (the download is refused), or a failed install leaves AppWrap fully
   installed and working; the outcome is written to the install log, to
   `Data\sandboxie-bootstrap.log` beside AppWrap.exe, and onto the
-  setup's final page. The profiler then uses its host fallback (stage 2)
-  until Sandboxie-Plus exists.
-- **ARM64**: no ARM64 installer hash is pinned yet (see the lock), so
-  on ARM64 hosts the bootstrap does not install automatically; it says
-  so in the log and on the final page instead of installing an
-  unverified download.
+  setup's final page. The GUI sandbox action and an explicit CLI
+  `--sandboxie` request stop with a clear error if Sandboxie is unavailable;
+  the CLI's separate host runtime route remains explicit.
 
 ### The Sandboxie lock
 
@@ -74,9 +71,8 @@ three places (lock, script, this table) together.
 | Pinned release | Sandboxie-Plus **1.18.8** (Classic core 5.73.8), 2026-10-17 |
 | Release page | https://github.com/sandboxie-plus/Sandboxie/releases/tag/v1.18.8 |
 | x64 asset | `Sandboxie-Plus-x64-v1.18.8.exe` |
-| ARM64 asset | `Sandboxie-Plus-ARM64-v1.18.8.exe` (name per the official installer script's OutputBaseFilename pattern) |
 | x64 SHA-256 | `f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76` — **Unverified**: independent mirrors compute this value for the file the official release serves, but the Sandboxie project publishes no hash on a source this lock can cite, so the pin records the value with its verified flag false. The bootstrap still refuses a mismatch. |
-| ARM64 SHA-256 | Not pinned (bootstrap refuses automatic install on ARM64) |
+| Supported host | Windows 11 x64 |
 | Silent form | Inno Setup: `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-` |
 
 ## Stage 1 — ingestion engines
@@ -110,23 +106,28 @@ Wiring (`EnginePlanner` + `StaticAuditor.AuditExeWithEnginesAsync` /
   to the pre-engine behavior — family identification plus an explicit
   static-audit-limited finding. Never an error, never a guess.
 
-CLI: `audit <source> --engines`. The wizard's audit is unchanged (it
-uses the host runtime pass; engines are a CLI/static-pass concern).
+CLI: `audit <source> --engines`. Engine-backed static extraction remains
+a CLI concern; the wizard keeps its static pass read-only.
 
 ## Stage 2 — sandboxed profiling
 
-When Sandboxie-Plus is present, the runtime pass can profile inside a
-dedicated box instead of on the host (`RuntimeAuditor.RunSandboxedAsync`,
-CLI: `audit <source> --runtime --sandboxie`):
+The GUI's explicit runtime action and the CLI's
+`audit <source> --runtime --sandboxie` profile inside Sandboxie. The CLI's
+`audit <source> --runtime` setup-only route remains host-based; requesting
+`--sandboxie` never falls back to the host:
 
 - A dedicated box (`AppWrapProfile`) is configured from generated
   Sandboxie.ini settings (`SandboxieBoxConfig`): its file root is a
   scratch folder the audit owns, auto-recovery is off, and network file
-  access is blocked — profiling needs no network. Configuration is
-  installed through SbieIni.exe when present, else by appending the
-  section to the global Sandboxie.ini.
-- The vendor installer runs in the box (same silent switches, same
-  scratch install target), then the installed app runs in the box once.
+  access is blocked. Configuration is installed through SbieIni.exe
+  when present; the fallback updates only AppWrap's section in the
+  global Sandboxie.ini.
+- For `.exe`/`.msi`, the vendor installer runs in the box (same silent
+  switches, same scratch install target), then the installed app runs in
+  the box once. For `.zip`, the safe extractor unpacks to a scratch
+  payload; the user selects an executable, which runs once in the box
+  with the payload folder as its working directory. The extracted payload
+  is kept under AppWrap's `Data\Audit` folder for the next build step.
 - **Harvest**: files the box holds are mapped back to host paths
   (the box mirrors drives under `drive\<letter>\…` and the profile
   under `user\<name>\…`) and then to PAL tokens (`PalPathMapper`:
@@ -134,11 +135,11 @@ CLI: `audit <source> --runtime --sandboxie`):
   and the box's own registry hive is loaded and normalized
   (MACHINE→HKLM, USER\<sid>→HKCU). Both halves become findings through
   the existing classification — one report shape for both backends.
-- **Fallback**: when Sandboxie-Plus is absent, the runtime pass runs
-  the existing host route (real-registry snapshot diff) and the result
-  states which backend observed (`runtimeBackend`: `sandboxie` or
-  `host`). The host route's honest limits in `docs/AUDIT.md` apply to
-  it unchanged.
+- **Failure handling**: a missing Sandboxie install, failed box
+  configuration, or failed registry-hive load stops the sandboxed audit.
+  A present hive that cannot be loaded is never reported as an empty
+  registry diff. The host route's honest limits in `docs/AUDIT.md` apply
+  only when the user explicitly chooses it.
 
 ## Stage 3 — synthesis extensions
 
@@ -185,7 +186,8 @@ running the host mode instead.
 **Configuration validated** on a non-Windows host (`PipelineChecks`):
 the locks' shape, bootstrap decisions, engine planning, engine-backed
 audit through a fake runner, path mapping, box config generation,
-harvest classification and hive normalization, the synthesis
+box-config updates, zip runtime flow through a fake sandbox, registry
+failure reporting, harvest classification and hive normalization, the synthesis
 extensions, the splash spec, and the harness's Sandboxie verdict
 through a fake sandbox.
 

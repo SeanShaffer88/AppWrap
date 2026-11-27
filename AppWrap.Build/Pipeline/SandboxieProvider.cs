@@ -77,7 +77,7 @@ public sealed class SandboxieProvider : ISandboxProvider
 
     private string StartExe => Path.Combine(installPath!, "Start.exe");
 
-    public async Task<SandboxRunOutcome> RunAsync(SandboxieBoxSpec spec, string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token)
+    public async Task<SandboxRunOutcome> RunAsync(SandboxieBoxSpec spec, string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token, string? workingDirectory = null)
     {
         if (!IsAvailable) throw new BuildFailureException("Sandboxie-Plus is not installed, so the sandboxed route cannot run.", "Sandboxie provider used while unavailable.");
         EnsureBox(spec);
@@ -87,7 +87,7 @@ public sealed class SandboxieProvider : ISandboxProvider
         var watch = Stopwatch.StartNew();
         try
         {
-            var result = await ProcessRunner.RunAsync(StartExe, args, installPath!, token, timeout).ConfigureAwait(false);
+            var result = await ProcessRunner.RunAsync(StartExe, args, workingDirectory ?? installPath!, token, timeout).ConfigureAwait(false);
             watch.Stop();
             return new SandboxRunOutcome(result.ExitCode, false, watch.Elapsed);
         }
@@ -114,28 +114,32 @@ public sealed class SandboxieProvider : ISandboxProvider
     public RegistrySnapshot CaptureBoxRegistry(SandboxieBoxSpec spec, CancellationToken token)
     {
         var hive = Path.Combine(spec.FileRootPath, "RegHive");
-        if (!File.Exists(hive)) return RegistrySnapshot.Empty;
+        // Sandboxie creates RegHive only when something wrote to the
+        // registry. A genuinely missing file means no changes; an
+        // inaccessible or malformed path must not masquerade as empty.
+        FileAttributes hiveAttributes;
+        try { hiveAttributes = File.GetAttributes(hive); }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException) { return RegistrySnapshot.Empty; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new BuildFailureException("AppWrap couldn't inspect Sandboxie's registry hive; the audit stopped instead of claiming there were no registry changes.",
+                $"Registry hive inspection failed: {error.GetType().Name}: {error.Message}");
+        }
+        if (hiveAttributes.HasFlag(FileAttributes.Directory))
+            throw new BuildFailureException("AppWrap found an invalid Sandboxie registry hive path; the audit stopped instead of claiming there were no registry changes.",
+                $"Expected a hive file at '{hive}', but the path is a directory.");
         var loadRoot = SandboxieHarvest.LoadRootFor(spec);
         var loaded = false;
         try
         {
-            var load = Process.Start(new ProcessStartInfo("reg.exe", $"load \"{loadRoot.Replace("HKLM", "HKEY_LOCAL_MACHINE")}\" \"{hive}\"") { UseShellExecute = false, CreateNoWindow = true });
-            load?.WaitForExit(30000);
-            if (load is null || load.ExitCode != 0) return RegistrySnapshot.Empty;
+            RunChecked("reg.exe", $"load \"{loadRoot.Replace("HKLM", "HKEY_LOCAL_MACHINE")}\" \"{hive}\"", "load the Sandboxie registry hive");
             loaded = true;
             return new WindowsRegistrySnapshotProvider().Capture([loadRoot], token);
         }
         finally
         {
             if (loaded)
-            {
-                try
-                {
-                    var unload = Process.Start(new ProcessStartInfo("reg.exe", $"unload \"{loadRoot.Replace("HKLM", "HKEY_LOCAL_MACHINE")}\"") { UseShellExecute = false, CreateNoWindow = true });
-                    unload?.WaitForExit(30000);
-                }
-                catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
-            }
+                RunChecked("reg.exe", $"unload \"{loadRoot.Replace("HKLM", "HKEY_LOCAL_MACHINE")}\"", "unload the temporary Sandboxie registry hive");
         }
     }
 
@@ -145,19 +149,64 @@ public sealed class SandboxieProvider : ISandboxProvider
         if (File.Exists(sbieIni))
         {
             void Set(string name, string value) =>
-                Process.Start(new ProcessStartInfo(sbieIni, $"set \"{spec.BoxName}\" \"{name}\" \"{value}\"") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(30000);
+                RunChecked(sbieIni, $"set \"{spec.BoxName}\" \"{name}\" \"{value}\"", $"configure the Sandboxie box ({name})");
             Set("Enabled", "y");
             Set("FileRootPath", spec.FileRootPath.Replace('/', '\\'));
             Set("AutoDelete", "n");
             Set("AutoRecover", "n");
             if (spec.BlockNetworkFiles) Set("BlockNetworkFiles", "y");
-            Process.Start(new ProcessStartInfo(sbieIni, "reload") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(30000);
+            RunChecked(sbieIni, "reload", "reload Sandboxie configuration");
             return;
         }
-        // Fallback: append the generated section to the global config.
+        // Fallback: replace this AppWrap box's section in the global config.
         var iniPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Sandboxie.ini");
         var existing = File.Exists(iniPath) ? File.ReadAllText(iniPath) : "";
-        if (!existing.Contains("[" + spec.BoxName + "]", StringComparison.OrdinalIgnoreCase))
-            File.AppendAllText(iniPath, Environment.NewLine + SandboxieBoxConfig.Generate(spec));
+        File.WriteAllText(iniPath, SandboxieBoxConfig.UpsertSection(existing, spec));
+    }
+
+    private static void RunChecked(string executable, string arguments, string operation)
+    {
+        Process? process;
+        try
+        {
+            process = Process.Start(new ProcessStartInfo(executable, arguments) { UseShellExecute = false, CreateNoWindow = true });
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
+        {
+            throw new BuildFailureException($"AppWrap couldn't {operation}; the Sandboxie audit stopped instead of claiming a clean result.",
+                $"{operation} failed to start: {error.GetType().Name}: {error.Message}");
+        }
+        if (process is null)
+            throw new BuildFailureException($"AppWrap couldn't {operation}; the Sandboxie audit stopped instead of claiming a clean result.",
+                $"{operation} returned no process.");
+        using (process)
+        {
+            try
+            {
+                if (!process.WaitForExit(30000))
+                {
+                    try { process.Kill(entireProcessTree: true); process.WaitForExit(); }
+                    catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+                    EnsureSuccessfulExit(operation, null, timedOut: true);
+                }
+                EnsureSuccessfulExit(operation, process.ExitCode, timedOut: false);
+            }
+            catch (BuildFailureException) { throw; }
+            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+            {
+                throw new BuildFailureException($"AppWrap couldn't {operation}; the Sandboxie audit stopped instead of claiming a clean result.",
+                    $"{operation} failed: {error.GetType().Name}: {error.Message}");
+            }
+        }
+    }
+
+    internal static void EnsureSuccessfulExit(string operation, int? exitCode, bool timedOut)
+    {
+        if (timedOut)
+            throw new BuildFailureException($"AppWrap couldn't {operation} before the timeout; the Sandboxie audit stopped instead of claiming a clean result.",
+                $"{operation} exceeded 30 seconds.");
+        if (exitCode is not 0)
+            throw new BuildFailureException($"AppWrap couldn't {operation}; the Sandboxie audit stopped instead of claiming a clean result.",
+                $"{operation} exited with code {exitCode?.ToString() ?? "unknown"}.");
     }
 }

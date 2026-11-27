@@ -804,34 +804,43 @@ public static class CommandRouter
         var extension = Path.GetExtension(source).ToLowerInvariant();
         if (extension is not (".zip" or ".msi" or ".exe"))
             throw new CliUsageException($"audit takes a .zip, .msi or .exe source; got '{extension}'.", "audit");
+        if (invocation.Has("sandboxie") && !invocation.Has("runtime"))
+            throw new CliUsageException("--sandboxie requires --runtime.", "audit");
 
         AppWrap.Core.Audit.AuditReport report;
         string? payloadFolder = null;
         string? runtimeBackend = null;
         if (invocation.Has("runtime"))
         {
-            if (extension == ".zip")
-                throw new CliUsageException("--runtime applies to a setup .exe/.msi. Audit the zip statically, then build and use 'test' on the package.", "audit");
+            if (extension == ".zip" && !invocation.Has("sandboxie"))
+                throw new CliUsageException("Runtime auditing a zip requires --sandboxie so its app runs in isolation.", "audit");
             var silentArgs = invocation.Value("silent-args")?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             RuntimeAuditResult runtime;
             var sandbox = invocation.Has("sandboxie") ? new SandboxieProvider() : null;
-            if (sandbox is not null && sandbox.IsAvailable)
+            if (sandbox is not null)
             {
+                if (!sandbox.IsAvailable)
+                    throw new BuildFailureException("Sandboxie-Plus is not installed; the sandboxed audit was not run. AppWrap will not fall back to running the source on the host.", "The user requested audit --sandboxie but Sandboxie is unavailable.");
+                var payloadOutputDirectory = extension == ".zip"
+                    ? Path.Combine(environment.StateDirectory, "Audit", Path.GetFileNameWithoutExtension(source) + "-runtime-" + Guid.NewGuid().ToString("N")[..8])
+                    : null;
                 runtime = await RuntimeAuditor.RunSandboxedAsync(new RuntimeAuditRequest(
-                    source, invocation.Value("launch"), silentArgs), sandbox, new WindowsMsiReader(), token).ConfigureAwait(false);
+                    source, invocation.Value("launch"), silentArgs, PayloadOutputDirectory: payloadOutputDirectory),
+                    sandbox, new WindowsMsiReader(), token).ConfigureAwait(false);
                 runtimeBackend = "sandboxie";
-                result.Lines.Add("Runtime pass backend: Sandboxie (the installer and app ran inside a dedicated box; the host was not touched).");
+                result.Lines.Add("Runtime pass backend: Sandboxie (the source installer or selected zip app ran inside a dedicated box; AppWrap did not use the host fallback).");
             }
             else
             {
-                if (sandbox is not null)
-                    result.Lines.Add("Sandboxie-Plus is not installed, so the runtime pass ran on the host instead: the installer's registry writes land in the real registry (observing them is the point of the host route).");
                 runtime = await RuntimeAuditor.RunAsync(new RuntimeAuditRequest(
                     source, invocation.Value("launch"), silentArgs), token).ConfigureAwait(false);
                 runtimeBackend = "host";
             }
             report = runtime.Report;
-            result.Lines.Add($"Runtime pass: installer exit {(runtime.InstallerExitCode?.ToString() ?? "unknown")}, app exit {(runtime.AppExitCode?.ToString() ?? "not launched")}{(runtime.AppTimedOut ? " (timed out)" : "")}, {runtime.RegistryChanges.Count} registry change(s).");
+            if (extension == ".zip") payloadFolder = runtime.Report.PayloadFolder;
+            result.Lines.Add(extension == ".zip"
+                ? $"Runtime pass: app exit {(runtime.AppExitCode?.ToString() ?? "unknown")}{(runtime.AppTimedOut ? " (timed out)" : "")}, {runtime.RegistryChanges.Count} registry change(s)."
+                : $"Runtime pass: installer exit {(runtime.InstallerExitCode?.ToString() ?? "unknown")}, app exit {(runtime.AppExitCode?.ToString() ?? "not launched")}{(runtime.AppTimedOut ? " (timed out)" : "")}, {runtime.RegistryChanges.Count} registry change(s).");
             if (runtime.CleanupWarning is not null) result.Lines.Add("Warning: " + runtime.CleanupWarning);
         }
         else if (extension == ".zip")

@@ -27,40 +27,30 @@ hidden.
 
 ## Pass 2 — runtime audit (explicit, Windows only)
 
-The runtime pass extends the runtime test harness
-(`docs/TEST-HARNESS.md`), which now observes the registry alongside files:
+The runtime pass is separate from a build and supports two explicit routes:
 
-- The harness snapshots the HKCU and HKLM `Software` roots before launch
-  and after exit (read-only, through advapi32 behind
-  `IRegistrySnapshotProvider`) and diffs them into the same report shape:
-  PAL's own backup area under `HKCU\Software\PortableApps.com` is noted,
-  ordinary HKCU writes are **host leakage** violations, and HKLM writes are
-  **machine-wide** violations. The diff/classification logic is pure Core
-  code and check-covered with synthetic snapshots.
-- For a conversion, the runtime auditor runs the vendor installer
-  silently (family silent switches, or the caller's explicit arguments;
-  an unknown family without explicit arguments is refused rather than run
-  interactively) with its install target inside a throwaway scratch tree,
-  inventories the installed folder with the static auditor, launches the
-  installed app once, and merges the registry diff into the audit report
-  as registry findings.
+- **Host route** (`audit <setup.exe|setup.msi> --runtime`): the HKCU/HKLM
+  `Software` roots are snapshotted before and after the pass. Installer
+  registry writes land in the real registry; AppWrap does not uninstall
+  the installer afterward. Only its install files are confined to a
+  scratch tree, which is deleted. This route is explicit and is not used
+  by the GUI sandbox action.
+- **Sandboxie route** (`audit <source> --runtime --sandboxie`, or the
+  wizard's **Run sandbox audit** action): installer and app runs occur in
+  a dedicated box; its files and registry hive become findings through
+  the same classification. For `.exe`/`.msi`, known silent switches or
+  caller-supplied arguments are used; unknown installer families are
+  refused rather than run interactively. For `.zip`, AppWrap safely
+  extracts a fresh payload, lets the user select an executable, and runs
+  it once inside the box. The extracted payload is retained under
+  AppWrap's audit state folder for the next build.
+- **Failure behavior:** a missing Sandboxie install, failed box setup,
+  or failed registry-hive load stops the sandboxed audit. A present hive
+  that could not be loaded is never treated as an empty registry diff.
 
-Honest limits: the installer runs on the machine performing the audit —
-its registry writes land in the real registry (observing them is the
-point) and AppWrap does not uninstall it afterwards; only the install
-*files* are confined to the scratch tree, which is deleted afterwards.
-Installers needing administrator rights, a reboot or interaction fail or
-time out, and that outcome is reported.
-
-**Sandboxed route (pipeline stage 2).** When Sandboxie-Plus is
-installed (AppWrap Setup bootstraps it — `docs/PIPELINE.md` stage 0),
-the runtime pass can profile inside a dedicated Sandboxie box instead:
-the installer and the app run in the box, and the harvest — box files
-mapped back to host/PAL paths, plus the box's own registry hive —
-becomes the findings through the same classification. Nothing touches
-the real host filesystem or registry on this route. The audit result
-states which backend observed (`runtimeBackend`); without Sandboxie
-the pass falls back to the host route above and says so.
+Installers needing administrator rights, a reboot or interaction can
+fail or time out; AppWrap reports that outcome instead of claiming a
+complete audit.
 
 ## Draft profile synthesis
 
@@ -98,23 +88,26 @@ profile only when the user saves it there.
 ## Surfaces
 
 - **Wizard:** step 1 (portable modes) → **Convert a setup or zip…** —
-  choose the source, run the static audit, optionally the runtime audit,
-  read the findings, then **Review draft profile** loads the draft into
-  the profile workspace and points the wizard at the audited payload.
+  choose the source and run the static audit. For a zip, select one of
+  the listed executables before **Run sandbox audit**. Read the findings,
+  then **Review draft profile** loads the draft into the profile
+  workspace and points the wizard at the audited payload.
 - **CLI:** `audit <source> [--runtime] [--draft <profile.json>]
   [--report <audit-report.json>]` (see `docs/CLI.md`); `--engines`
   adds the prepared extraction engines to the static pass and
-  `--sandboxie` routes the runtime pass through Sandboxie when
-  available. A reviewed draft builds with `build --profile <file>` or
-  `build --audit-draft <file>`.
+  `--sandboxie` requires Sandboxie for the runtime pass. Zip runtime
+  auditing requires `--sandboxie`; use `--launch <relative-exe>` when
+  the zip does not have one obvious main executable. A reviewed draft
+  builds with `build --profile <file>` or `build --audit-draft <file>`.
 
 ## Evidence level
 
 **Configuration validated**: finding classification, .reg parsing, MSI
 fixture parsing, registry snapshot diffing and draft synthesis are
 check-covered on a non-Windows host (`AuditChecks`, `CliChecks`), as
-are the pipeline's engine planning, path mapping, box harvest and
-synthesis extensions (`PipelineChecks`, `docs/PIPELINE.md`).
+are the pipeline's engine planning, path mapping, zip runtime flow
+through a fake Sandboxie provider, registry failure handling, box
+harvest and synthesis extensions (`PipelineChecks`, `docs/PIPELINE.md`).
 The real `msi.dll` reader, the advapi32 registry provider, silent
 installs, the Sandboxie provider and all Windows runtime behavior are
 **Unverified**.
