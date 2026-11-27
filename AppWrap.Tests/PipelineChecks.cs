@@ -33,9 +33,10 @@ public static class PipelineChecks
             && sbie.ReleasePageUrl == "https://github.com/sandboxie-plus/Sandboxie/releases/tag/v1.18.8"
             && sbie.SilentArguments.Contains("/VERYSILENT"));
         var x64 = sbie.AssetFor("x64")!;
-        check("sandboxie x64 asset is pinned with an honestly-unverified hash", x64.FileName == "Sandboxie-Plus-x64-v1.18.8.exe"
+        check("sandboxie x64 asset is pinned to the official release checksum", x64.FileName == "Sandboxie-Plus-x64-v1.18.8.exe"
             && x64.DownloadUrl.EndsWith("/v1.18.8/Sandboxie-Plus-x64-v1.18.8.exe", StringComparison.Ordinal)
-            && x64.Sha256 is { Length: 64 } && !x64.Sha256Verified);
+            && x64.Sha256 == "f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76"
+            && x64.Sha256Verified);
         check("sandboxie lock supports x64 only", sbie.Assets.Count == 1 && sbie.AssetFor("ARM64") is null);
         check("sandboxie detection facts match the official installer", sbie.UninstallKeyPath.EndsWith(@"Uninstall\Sandboxie-Plus_is1", StringComparison.Ordinal)
             && sbie.ServiceKeyPath.EndsWith(@"Services\SbieSvc", StringComparison.Ordinal));

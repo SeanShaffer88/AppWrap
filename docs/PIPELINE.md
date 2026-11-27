@@ -14,19 +14,32 @@ what happens when a piece is missing.
 | 3 | Configuration & asset synthesis (draft profile, splash) | `docs/AUDIT.md` + this document |
 | 4 | Compilation (PAL / PAF) + Sandboxie leak verification | `docs/TEST-HARNESS.md` + this document |
 
+## Runtime dependency bundle
+
+The release payload is self-contained for Windows 11 x64. It includes the
+.NET and Windows Desktop runtimes and their notices; AppWrap's required
+runtime packaging engines (Inno Setup, PortableApps Packaging Builder, and
+the PAL/NSIS compiler backends); and the pinned Sandboxie installer, its
+GPL-3.0 license, official checksum file, and source archive. Setup uses
+these local files and does not download dependencies. The optional
+extraction engines in Stage 1 are not required to create packages; when
+present, they are also copied into the payload.
+
+Windows system APIs and Windows PowerShell are supplied by the supported
+operating system, not AppWrap. Sandboxie's kernel driver requires the
+Windows UAC prompt; an installer cannot bundle or suppress that OS consent.
+`tools/Build-AppWrap-Setup.ps1` assembles the payload and compiles Setup
+with the NSIS compiler already included in the PortableApps backend.
+
 ## The bootstrap decision (SEAN, 2026-11-25)
 
-AppWrap's standing rules are zero-cloud and no silent elevation. For
-this feature SEAN explicitly overrode them, scoped to exactly this:
-**AppWrap Setup silently downloads and installs Sandboxie-Plus** (with
-its kernel driver) when it is missing or outdated, so the sandboxed
-profiler has a consistent, isolated environment on any Windows machine
-without relying on Windows Sandbox or OS virtualization features. The
-override is recorded here and in `docs/ROADMAP.md`; it does not extend
-to anything else — AppWrap itself still never phones home, and no other
-component downloads anything at runtime. (The extraction engines below
-are prepared at build time by a maintainer script, like every other
-AppWrap backend; nothing fetches them on a user's machine.)
+AppWrap Setup installs the pinned Sandboxie-Plus release when it is
+missing or outdated, so the sandboxed profiler has a consistent isolated
+environment without relying on Windows Sandbox or OS virtualization.
+The installer is embedded in Setup and hash-checked before launch; setup
+does not download it. Windows still controls the UAC prompt for the
+kernel driver. AppWrap itself does not phone home, and no dependency is
+downloaded at runtime. Backend preparation happens at build time.
 
 ## Stage 0 — installer bootstrap
 
@@ -43,17 +56,16 @@ agree, and it is check-covered:
 - **Ready**: service + Start.exe present and the version is at or above
   the pinned floor (or unreadable — an install AppWrap cannot prove is
   old is left alone). Nothing is downloaded.
-- **Install / upgrade**: the pinned Windows x64 installer
-  is downloaded from the official sandboxie-plus/Sandboxie GitHub
-  release, its SHA-256 is compared against the pinned value, and it is
-  run with the Inno Setup silent form
+- **Install / upgrade**: the pinned Windows x64 installer is embedded
+  from the official sandboxie-plus/Sandboxie GitHub release, its SHA-256
+  is checked locally, and it is run with the Inno Setup silent form
   (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`), which installs the
   service and the SbieDrv kernel driver. Windows shows its own UAC
   prompt for the driver install — that prompt belongs to the operating
   system and cannot be silenced by any installer.
-- **Failure is plain, never fake**: a failed download, a hash mismatch
-  (the download is refused), or a failed install leaves AppWrap fully
-  installed and working; the outcome is written to the install log, to
+- **Failure is plain, never fake**: a missing/unreadable embedded file, a
+  hash mismatch (the installer is refused), or a failed install leaves
+  AppWrap fully installed and working; the outcome is written to the install log, to
   `Data\sandboxie-bootstrap.log` beside AppWrap.exe, and onto the
   setup's final page. The GUI sandbox action and an explicit CLI
   `--sandboxie` request stop with a clear error if Sandboxie is unavailable;
@@ -71,9 +83,10 @@ three places (lock, script, this table) together.
 | Pinned release | Sandboxie-Plus **1.18.8** (Classic core 5.73.8), 2026-10-17 |
 | Release page | https://github.com/sandboxie-plus/Sandboxie/releases/tag/v1.18.8 |
 | x64 asset | `Sandboxie-Plus-x64-v1.18.8.exe` |
-| x64 SHA-256 | `f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76` — **Unverified**: independent mirrors compute this value for the file the official release serves, but the Sandboxie project publishes no hash on a source this lock can cite, so the pin records the value with its verified flag false. The bootstrap still refuses a mismatch. |
+| x64 SHA-256 | `f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76` — **verified** against the official `sha256-checksums.txt`, whose digest is pinned to GitHub release-asset metadata |
 | Supported host | Windows 11 x64 |
 | Silent form | Inno Setup: `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-` |
+| Source and license | GPL-3.0 source archive for pinned commit `bde0890108a563f5d72eb8e57085be2b37177218` and `LICENSE.Classic` are included |
 
 ## Stage 1 — ingestion engines
 

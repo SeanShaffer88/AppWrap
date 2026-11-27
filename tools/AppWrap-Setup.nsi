@@ -54,19 +54,17 @@ VIAddVersionKey "LegalCopyright" "Copyright (c) Sean Shaffer. MIT License."
 ; These values mirror the ONE lock: SandboxieLock.Pinned in
 ; AppWrap.Core/Pipeline/PipelineLocks.cs, documented in docs/PIPELINE.md.
 ; Keep all three in sync. The x64 SHA-256 is the value independent mirrors
-; compute for the file served from the official release; the Sandboxie
-; project publishes no hash AppWrap can cite, so the lock marks it
-; Unverified — the bootstrap still refuses a download that does not match
-; it. AppWrap supports Windows x64 only.
+; publishes in its official release checksum file. AppWrap embeds the
+; installer and its corresponding source/license files; setup needs no
+; network access. AppWrap supports Windows x64 only.
 !define SBIE_VERSION "1.18.8"
-!define SBIE_URL_X64 "https://github.com/sandboxie-plus/Sandboxie/releases/download/v1.18.8/Sandboxie-Plus-x64-v1.18.8.exe"
 !define SBIE_SHA256_X64 "f27078ff74a07906fd51476079e1a7a8f5e20c8bb75a9d2ae86169d47179ae76"
 !define SBIE_SILENT_ARGS "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
 
 Var SandboxieNote
 
-!define MUI_ICON "..\AppWrap.Gui\Assets\AppWrap.ico"
-!define MUI_UNICON "..\AppWrap.Gui\Assets\AppWrap.ico"
+!define MUI_ICON "../AppWrap.Gui/Assets/AppWrap.ico"
+!define MUI_UNICON "../AppWrap.Gui/Assets/AppWrap.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\AppWrap.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open AppWrap"
 
@@ -153,26 +151,27 @@ Function BootstrapSandboxie
     Return
   ${EndIf}
 
-  ; Download + verify + silent-install via a small PowerShell script
-  ; (PowerShell ships with every supported Windows). Exit codes:
-  ; 0 installed, 10 download failed, 11 hash mismatch, 12 installer failed.
-  InitPluginsDir
+  ; Verify the embedded official installer, then launch it via PowerShell
+  ; (available on supported Windows). Start-Process lets its driver manifest
+  ; raise the required Windows UAC prompt. Exit codes: 0 installed,
+  ; 10 embedded file missing/read failed, 11 hash mismatch, 12 install failed.
   FileOpen $9 "$PLUGINSDIR\sbie-bootstrap.ps1" w
   FileWrite $9 "$$ErrorActionPreference='Stop'$\r$\n"
-  FileWrite $9 "try { Invoke-WebRequest -Uri '${SBIE_URL_X64}' -OutFile '$PLUGINSDIR\Sandboxie-Plus-x64-v${SBIE_VERSION}.exe' -UseBasicParsing } catch { exit 10 }$\r$\n"
-  FileWrite $9 "$$h=(Get-FileHash -Algorithm SHA256 -LiteralPath '$PLUGINSDIR\Sandboxie-Plus-x64-v${SBIE_VERSION}.exe').Hash.ToLowerInvariant()$\r$\n"
+  FileWrite $9 "$$f='$PLUGINSDIR\Sandboxie-Plus-x64-v${SBIE_VERSION}.exe'$\r$\n"
+  FileWrite $9 "if(-not (Test-Path -LiteralPath $$f)){ exit 10 }$\r$\n"
+  FileWrite $9 "try { $$h=(Get-FileHash -Algorithm SHA256 -LiteralPath $$f).Hash.ToLowerInvariant() } catch { exit 10 }$\r$\n"
   FileWrite $9 "if($$h -ne '${SBIE_SHA256_X64}'){ exit 11 }$\r$\n"
-  FileWrite $9 "$$p=Start-Process -FilePath '$PLUGINSDIR\Sandboxie-Plus-x64-v${SBIE_VERSION}.exe' -ArgumentList '${SBIE_SILENT_ARGS}' -Wait -PassThru$\r$\n"
+  FileWrite $9 "$$p=Start-Process -FilePath $$f -ArgumentList '${SBIE_SILENT_ARGS}' -Wait -PassThru$\r$\n"
   FileWrite $9 "if($$p.ExitCode -ne 0){ exit 12 }$\r$\n"
   FileWrite $9 "exit 0$\r$\n"
   FileClose $9
   ExecWait 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\sbie-bootstrap.ps1"' $R1
   ${If} $R1 == 0
-    StrCpy $SandboxieNote "Sandboxie-Plus ${SBIE_VERSION} was installed for sandboxed profiling (download verified against its pinned SHA-256)."
+    StrCpy $SandboxieNote "Sandboxie-Plus ${SBIE_VERSION} was installed for sandboxed profiling (embedded installer verified against the official release checksum)."
   ${ElseIf} $R1 == 10
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the download from the official release failed. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
+    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the embedded installer was missing or could not be read. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${ElseIf} $R1 == 11
-    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the downloaded installer's SHA-256 did not match the pinned value, so it was refused. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
+    StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: the embedded installer's SHA-256 did not match the official release checksum, so it was refused. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${ElseIf} $R1 == 12
     StrCpy $SandboxieNote "Sandboxie-Plus was NOT installed: its installer reported a failure. AppWrap still works; sandboxed audits stop until Sandboxie-Plus is available."
   ${Else}
@@ -187,7 +186,7 @@ Section "AppWrap" SecMain
   SectionIn RO
 
   SetOutPath "$INSTDIR"
-  File /r "${PAYLOAD}\*.*"
+  File /r "${PAYLOAD}/*.*"
 
   ; Start Menu shortcuts.
   CreateDirectory "$SMPROGRAMS\AppWrap"
@@ -212,14 +211,15 @@ Section "Sandboxie-Plus profiling runtime" SecSandboxie
   SectionIn RO
 
   ; AppWrap's sandboxed profiler (docs/PIPELINE.md) needs Sandboxie-Plus.
-  ; Per SEAN's 2026-11-25 decision this setup bootstraps it: a missing or
-  ; outdated install is downloaded from the official release, verified
-  ; against the pinned SHA-256, and installed silently (its Inno Setup
-  ; silent form; Windows still shows its own UAC prompt for the kernel
-  ; driver — that prompt is the operating system's, not AppWrap's).
+  ; Setup embeds the official release asset, verifies its pinned SHA-256,
+  ; and installs it without network access (Inno Setup silent form; Windows
+  ; still shows its own UAC prompt for the kernel driver).
   ; Any failure leaves AppWrap fully installed and working; sandboxed
   ; audits stop until Sandboxie is available. Say so plainly here, in the log, and on the
   ; final page. The decision logic mirrors SandboxieBootstrapPlanner.
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=Sandboxie-Plus-x64-v${SBIE_VERSION}.exe "${PAYLOAD}/third_party/sandboxie/Sandboxie-Plus-x64-v${SBIE_VERSION}.exe"
   Call BootstrapSandboxie
 SectionEnd
 
@@ -252,6 +252,8 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\native"
 !endif
 
+  ; The manifest describes the payload files but cannot hash itself.
+  Delete "$INSTDIR\manifest.json"
   Delete "$INSTDIR\Uninstall.exe"
 
   ; Non-recursive on purpose: succeeds only when nothing but the removed
